@@ -1,4 +1,12 @@
-export type Cue = "card" | "pair" | "power" | "toc" | "win";
+export type Cue =
+  | "card"
+  | "pair"
+  | "power"
+  | "toc"
+  | "win"
+  | "quick"
+  | "tick"
+  | "penalty";
 
 let context: AudioContext | null = null;
 let effects: GainNode | null = null;
@@ -66,23 +74,40 @@ export function playCue(cue: Cue) {
             ? [587, 440]
             : cue === "pair"
               ? [440, 660]
-              : [330];
+              : cue === "quick"
+                ? [659, 880, 1174]
+                : cue === "tick"
+                  ? [1244]
+                : cue === "penalty"
+                  ? [220, 164]
+                  : [330];
     tones.forEach((frequency, index) => {
       const oscillator = ctx.createOscillator();
       const gain = ctx.createGain();
       const start = now + index * 0.085;
-      oscillator.type = "sine";
+      oscillator.type = cue === "penalty" ? "triangle" : "sine";
       oscillator.frequency.setValueAtTime(frequency, start);
       gain.gain.setValueAtTime(0.0001, start);
       gain.gain.exponentialRampToValueAtTime(
-        cue === "toc" ? 0.08 : 0.045,
+        cue === "toc"
+          ? 0.08
+          : cue === "quick"
+            ? 0.035
+            : cue === "tick"
+              ? 0.022
+            : cue === "penalty"
+              ? 0.055
+              : 0.045,
         start + 0.018,
       );
-      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.18);
+      gain.gain.exponentialRampToValueAtTime(
+        0.0001,
+        start + (cue === "tick" ? 0.085 : 0.18),
+      );
       oscillator.connect(gain);
       gain.connect(effects!);
       oscillator.start(start);
-      oscillator.stop(start + 0.19);
+      oscillator.stop(start + (cue === "tick" ? 0.09 : 0.19));
     });
     if (ctx.state === "suspended") void ctx.resume();
   } catch {

@@ -72,6 +72,7 @@ export type GameEvent = {
     | "swap"
     | "pair"
     | "quick-play"
+    | "penalty"
     | "toc"
     | "round-end";
   actor: number;
@@ -87,6 +88,8 @@ export type PlayerView = {
   score: number;
   color: string;
   cards: (Card | null)[];
+  /** True when a physical card occupies this private slot, even if its face is hidden. */
+  occupied: boolean[];
   cardCount: number;
 };
 export type GameView = {
@@ -257,14 +260,14 @@ export function restoreSavedGame(value: unknown): Game | null {
     const p = player as Partial<Player>;
     const cards = Array.isArray(p.cards) ? p.cards.map(restoreCard) : [];
     if (
-      cards.length !== 4 ||
+      cards.length > 52 ||
       cards.some((card, slot) => p.cards?.[slot] !== null && !card)
     )
       return null;
     const known = Array.isArray(p.known)
-      ? p.known.slice(0, 4).map(restoreCard)
+      ? p.known.slice(0, cards.length).map(restoreCard)
       : cards.map(() => null);
-    while (known.length < 4) known.push(null);
+    while (known.length < cards.length) known.push(null);
     return {
       id: p.id ?? `p${index}`,
       name: p.name ?? (index === 0 ? "Vous" : `IA ${index}`),
@@ -323,6 +326,7 @@ export function viewForPlayer(game: Game, viewer: number): GameView {
       score: player.score,
       color: player.color,
       cardCount: player.cards.filter(Boolean).length,
+      occupied: player.cards.map(Boolean),
       cards: reveal
         ? [...player.cards]
         : index === viewer
@@ -746,6 +750,7 @@ export function endTurn(g: Game): Game {
     ...g,
     current,
     tocAllowed: true,
+    lastFastMatchValue: null,
     phase: "play",
     message: `Au tour de ${g.players[current].name}.`,
   };
@@ -785,11 +790,57 @@ export function quickPlay(g: Game, player: number, card: Card): Game {
     ? revealRound(next, null)
     : next;
 }
+/** A human quick-play guess never exposes the selected face before the action. */
+export function attemptQuickPlay(g: Game, player: number, slot: number): Game {
+  if (
+    player < 0 ||
+    player >= g.players.length ||
+    g.lastFastMatchValue === null ||
+    g.phase === "round" ||
+    g.phase === "gameover" ||
+    !Number.isInteger(slot) ||
+    slot < 0 ||
+    slot >= g.players[player].cards.length
+  )
+    return g;
+  const card = g.players[player].cards[slot];
+  if (!card) return g;
+  if (matchValue(card) === g.lastFastMatchValue) return quickPlay(g, player, card);
+
+  const deck = [...g.deck];
+  let discard = [...g.discard];
+  const penalty =
+    deck.pop() ??
+    (discard.length > 1
+      ? discard.splice(discard.length - 2, 1)[0]
+      : undefined);
+  if (!penalty)
+    return { ...g, message: "La pioche est vide : aucune pénalité disponible." };
+  const players = g.players.map((p, i) =>
+    i === player
+      ? { ...p, cards: [...p.cards, penalty], known: [...p.known, null] }
+      : p,
+  );
+  return recordEvent(
+    {
+      ...g,
+      players,
+      deck,
+      discard,
+      lastFastMatchValue: null,
+      message: "Mauvaise pose : une carte de pénalité est ajoutée à votre main.",
+    },
+    { type: "penalty", actor: player },
+  );
+}
 export function closeFastPlayWindow(
   g: Game,
   value = g.lastFastMatchValue,
+  eventId?: number,
 ): Game {
-  return value === null || g.lastFastMatchValue !== value
+  return value === null ||
+    g.lastFastMatchValue !== value ||
+    (eventId !== undefined && g.events.at(-1)?.id !== eventId)
     ? g
     : { ...g, lastFastMatchValue: null };
 }

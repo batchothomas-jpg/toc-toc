@@ -20,7 +20,7 @@ const lessons = [
   {
     eyebrow: "04 · POSE RAPIDE",
     title: "Même rang ? Posez-la vite.",
-    text: "Après une pose, vous pouvez immédiatement jeter une carte de même rang, même hors de votre tour. Les couleurs ne comptent pas : Roi avec Roi.",
+    text: "Après une pose, vous avez 10 secondes pour tenter une carte de même rang, même hors de votre tour. Choisissez votre carte face cachée : sa face ne sera pas révélée avant votre choix. Une erreur ajoute une carte de pénalité à votre main.",
   },
   {
     eyebrow: "05 · FIN DE MANCHE",

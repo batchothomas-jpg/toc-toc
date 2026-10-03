@@ -1913,6 +1913,114 @@ button:focus-visible {
   }
 }
 
+/* Ten-second rapid-play window: clear, thumb-reachable, and self-dismissal is announced. */
+.rapid-play-prompt {
+  position: absolute;
+  z-index: 30;
+  left: 50%;
+  top: calc(env(safe-area-inset-top) + 72px);
+  bottom: auto;
+  transform: translateX(-50%);
+  width: min(590px, calc(100% - 28px));
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 48px auto;
+  align-items: center;
+  gap: 13px;
+  padding: 14px 16px;
+  border: 1px solid #e4bb6b9c;
+  border-radius: 18px;
+  color: #fff4d5;
+  background:
+    radial-gradient(ellipse at 0 0, #ffdb8a28, transparent 50%),
+    linear-gradient(128deg, #25170ff2, #100e0df5 60%, #21150cf2);
+  box-shadow: 0 16px 50px #000c, inset 0 1px #fff2, 0 0 35px #e9a94520;
+  backdrop-filter: blur(18px) saturate(1.15);
+}
+.rapid-emblem {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 13px;
+  color: #ffe3a0;
+  background: linear-gradient(145deg, #c4802a66, #67391f77);
+  box-shadow: inset 0 1px #ffedba55, 0 0 22px #edae5730;
+}
+.rapid-copy { min-width: 0; display: grid; gap: 4px; }
+.rapid-eyebrow {
+  color: #e5bc72;
+  font: 700 9px/1.2 ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: .15em;
+}
+.rapid-copy strong { font: 650 17px/1.15 Georgia, serif; }
+.rapid-copy small {
+  max-width: 390px;
+  color: #d7c8ad;
+  font: 500 11px/1.35 ui-sans-serif, system-ui, sans-serif;
+}
+.rapid-clock { width: 44px; height: 44px; position: relative; display: grid; place-items: center; }
+.rapid-clock svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+.rapid-clock circle { fill: none; stroke-width: 2.7; }
+.rapid-clock-track { stroke: #fff2; }
+.rapid-clock-progress {
+  stroke: #f2c66c;
+  stroke-linecap: round;
+  stroke-dasharray: 113.1;
+  stroke-dashoffset: 0;
+  filter: drop-shadow(0 0 4px #f2c66c9e);
+  animation: rapid-countdown 10s linear forwards;
+}
+.rapid-clock b { font: 700 15px/1 ui-sans-serif, system-ui, sans-serif; font-variant-numeric: tabular-nums; }
+@keyframes rapid-countdown { to { stroke-dashoffset: 113.1; stroke: #f27e53; } }
+.rapid-pass {
+  min-height: 37px;
+  padding: 0 11px;
+  border: 1px solid #ffffff26;
+  border-radius: 11px;
+  color: #dbcdb5;
+  background: #ffffff09;
+  font: 600 11px ui-sans-serif, system-ui, sans-serif;
+  cursor: pointer;
+}
+.rapid-pass:hover { color: white; border-color: #e6bf78a3; background: #e5b6581a; }
+.rapid-window-open .human-seat .card-slot:not(:disabled) {
+  cursor: crosshair;
+  animation: rapid-card-invite 1.15s ease-in-out infinite alternate;
+}
+.rapid-window-open .human-seat .card-slot:nth-child(2) { animation-delay: .12s; }
+.rapid-window-open .human-seat .card-slot:nth-child(3) { animation-delay: .24s; }
+.rapid-window-open .human-seat .card-slot:nth-child(4) { animation-delay: .36s; }
+@keyframes rapid-card-invite {
+  from { filter: drop-shadow(0 0 0 #e5bc7210); }
+  to { filter: drop-shadow(0 0 9px #e5bc7280); }
+}
+.reduce-motion .rapid-window-open .human-seat .card-slot,
+.reduce-motion .rapid-clock-progress { animation: none !important; }
+@media (max-width: 620px) {
+  .rapid-play-prompt {
+    top: calc(env(safe-area-inset-top) + 70px);
+    width: calc(100% - 20px);
+    grid-template-columns: 35px minmax(0, 1fr) 42px;
+    gap: 9px;
+    padding: 11px 12px;
+    border-radius: 15px;
+  }
+  .rapid-emblem { width: 34px; height: 34px; border-radius: 11px; }
+  .rapid-copy strong { font-size: 15px; }
+  .rapid-copy small { font-size: 10px; }
+  .rapid-eyebrow { font-size: 8px; }
+  .rapid-clock { width: 40px; height: 40px; }
+  .rapid-pass {
+    position: absolute;
+    right: 11px;
+    top: -30px;
+    min-height: 25px;
+    padding: 0 9px;
+    background: #17110deb;
+    font-size: 9px;
+  }
+}
+
 /* Nocturne table art direction: warm room, lacquered wood and burnished gold. */
 :root {
   --gold: #e8bf76;
@@ -2375,7 +2483,10 @@ button:focus-visible {
     0 2px 3px #0008;
 }
 .card-back {
-  background: radial-gradient(circle at center, #193f69, #092345 66%, #111820);
+  background:
+    linear-gradient(#06152a35, #06152a35),
+    url("../assets/card-back.webp") center / cover no-repeat,
+    radial-gradient(circle at center, #193f69, #092345 66%, #111820);
   border: 1px solid #dfbd72;
 }
 .card-back:before {
@@ -2391,9 +2502,7 @@ button:focus-visible {
     repeating-linear-gradient(45deg, transparent 0 7px, #d8b26321 8px 9px);
 }
 .card-back span {
-  color: #ffe5a3;
-  font-size: 15px;
-  text-shadow: 0 0 12px #fff0bd8c;
+  display: none;
 }
 .playing-card {
   background: linear-gradient(145deg, #fff9ed, #ddceb0);

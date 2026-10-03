@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   aiTurn,
   aiFastReaction,
+  attemptQuickPlay,
   callToc,
   cardValue,
   Card,
@@ -47,6 +48,11 @@ describe("TOC TOC rules engine", () => {
     expect(g.players.every((p) => p.cards.length === 4)).toBe(true);
     expect(g.phase).toBe("peek");
     expect(g.peekLeft).toBe(2);
+    const view = viewForPlayer(g, 0);
+    expect(view.players[0].occupied).toEqual([true, true, true, true]);
+    expect(view.players[0].cards).toEqual([null, null, null, null]);
+    expect(view.players[1].occupied).toEqual([true, true, true, true]);
+    expect(view.players[1].cards).toEqual([null, null, null, null]);
   });
   it("allows groups of matching values to be laid down", () => {
     const g = startGame();
@@ -76,6 +82,35 @@ describe("TOC TOC rules engine", () => {
     expect(next.players[2].cards[0]).toBeNull();
     expect(next.discard.at(-1)).toEqual(c(8, "♥"));
     expect(next.lastFastMatchValue).toBe(8);
+  });
+  it("adds one hidden penalty card when a rapid-play guess is wrong", () => {
+    const g = startGame();
+    g.phase = "play";
+    g.lastFastMatchValue = 8;
+    g.players[0].cards = [c(4), c(2), c(3), c(5)];
+    g.players[0].known = [null, null, null, null];
+    const next = attemptQuickPlay(g, 0, 0);
+    expect(next.players[0].cards).toHaveLength(5);
+    expect(next.players[0].cards[0]).toEqual(c(4));
+    expect(next.players[0].cards[4]).not.toBeNull();
+    expect(next.players[0].known[4]).toBeNull();
+    expect(next.lastFastMatchValue).toBeNull();
+    expect(next.events.at(-1)?.type).toBe("penalty");
+    expect(viewForPlayer(next, 0).players[0].occupied).toEqual([
+      true, true, true, true, true,
+    ]);
+    expect(viewForPlayer(next, 0).players[0].cards[4]).toBeNull();
+  });
+  it("lets the player choose a hidden card and resolves the rank inside the engine", () => {
+    const g = startGame();
+    g.phase = "play";
+    g.lastFastMatchValue = 8;
+    g.players[0].cards = [c(2), c(8, "♥"), c(3), c(5)];
+    g.players[0].known = [null, null, null, null];
+    const next = attemptQuickPlay(g, 0, 1);
+    expect(next.players[0].cards[1]).toBeNull();
+    expect(next.discard.at(-1)).toEqual(c(8, "♥"));
+    expect(next.events.at(-1)?.type).toBe("quick-play");
   });
   it("lets a knowledgeable AI react using its own memory", () => {
     const g = startGame();

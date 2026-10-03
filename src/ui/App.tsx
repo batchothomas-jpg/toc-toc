@@ -24,6 +24,7 @@ import {
 import {
   aiFastReaction,
   aiTurn,
+  attemptQuickPlay,
   callToc,
   Card,
   closeFastPlayWindow,
@@ -39,7 +40,6 @@ import {
   nextRound,
   PlayerView,
   playPair,
-  quickPlay,
   red,
   rememberCard,
   restoreSavedGame,
@@ -55,6 +55,10 @@ import Tutorial from "./Tutorial";
 type Screen = "home" | "mode" | "rules" | "tutorial" | "scores" | "game";
 const names = ["Vous", "Léonie", "Marcel", "Iris"];
 const fmt = (n: number) => String(n).padStart(2, "0");
+const rankName = (rank: number) =>
+  ({ 1: "As", 11: "Valet", 12: "Dame", 13: "Roi" })[
+    rank as 1 | 11 | 12 | 13
+  ] ?? String(rank);
 const ruleSections = [
   [
     "But du jeu",
@@ -74,7 +78,7 @@ const ruleSections = [
   ],
   [
     "Poser des cartes identiques",
-    "À votre tour, posez de deux à quatre cartes de même rang. Après une pose, chaque joueur peut réagir immédiatement avec une carte du même rang, avant qu’une autre carte ne soit posée.",
+    "À votre tour, posez de deux à quatre cartes de même rang. Après une pose, chaque joueur dispose de 10 secondes pour tenter une pose rapide avec une carte de même rang. Choisissez vous-même une carte face cachée : le jeu ne vous indique pas laquelle correspond. Si votre choix est faux, vous piochez une carte de pénalité qui reste dans votre main.",
   ],
   [
     "Les pouvoirs",
@@ -117,6 +121,11 @@ function App() {
     null,
   );
   const [notice, setNotice] = useState("");
+  const [rapidPrompt, setRapidPrompt] = useState<{
+    eventId: number;
+    rank: number;
+  } | null>(null);
+  const [rapidSeconds, setRapidSeconds] = useState(10);
   const [sound, setSound] = useState(true);
   const [speed, setSpeed] = useState(true);
   const [reduceMotion, setReduceMotion] = useState(
@@ -165,6 +174,7 @@ function App() {
     )
       playCue("win");
     else if (message.includes("toc toc")) playCue("toc");
+    else if (message.includes("mauvaise pose")) playCue("penalty");
     else if (
       message.includes("pose rapide") ||
       message.includes("cartes posées")
@@ -180,6 +190,13 @@ function App() {
       playCue("card");
   }, [game?.message, sound]);
   useEffect(() => {
+    if (rapidPrompt && sound) playCue("quick");
+  }, [rapidPrompt?.eventId, sound]);
+  useEffect(() => {
+    if (rapidPrompt && rapidSeconds > 0 && rapidSeconds <= 3 && sound)
+      playCue("tick");
+  }, [rapidSeconds, rapidPrompt?.eventId, sound]);
+  useEffect(() => {
     setEffectsVolume(sound ? effectVolume / 100 : 0);
   }, [sound, effectVolume]);
   useEffect(() => {
@@ -194,10 +211,17 @@ function App() {
       return;
     const id = window.setTimeout(
       () => setGame((g) => (g ? aiTurn(g) : g)),
-      game.lastFastMatchValue === null ? 650 : 1050,
+      game.lastFastMatchValue === null ? 650 : 10200,
     );
     return () => clearTimeout(id);
-  }, [screen, modal, game?.current, game?.phase, game?.events.length]);
+  }, [
+    screen,
+    modal,
+    game?.current,
+    game?.phase,
+    game?.events.length,
+    game?.lastFastMatchValue,
+  ]);
   useEffect(() => {
     if (screen !== "game" || modal || !game || game.lastFastMatchValue === null)
       return;
@@ -206,15 +230,47 @@ function App() {
       () => setGame((g) => (g ? aiFastReaction(g) : g)),
       260,
     );
-    const close = window.setTimeout(
-      () => setGame((g) => (g ? closeFastPlayWindow(g, match) : g)),
-      900,
-    );
     return () => {
       clearTimeout(reaction);
-      clearTimeout(close);
     };
   }, [screen, modal, game?.events.length, game?.lastFastMatchValue]);
+  const rapidEvent = view?.events.at(-1);
+  const mayOfferRapidPlay =
+    screen === "game" &&
+    !modal &&
+    !!game &&
+    game.phase !== "round" &&
+    game.phase !== "gameover" &&
+    game.lastFastMatchValue !== null &&
+    rapidEvent?.actor !== 0 &&
+    (rapidEvent?.type === "pair" || rapidEvent?.type === "quick-play");
+  useEffect(() => {
+    if (
+      !mayOfferRapidPlay ||
+      !rapidEvent ||
+      game?.lastFastMatchValue === null ||
+      game?.lastFastMatchValue === undefined
+    ) {
+      setRapidPrompt(null);
+      return;
+    }
+    const prompt = { eventId: rapidEvent.id, rank: game.lastFastMatchValue };
+    setRapidPrompt(prompt);
+    setRapidSeconds(10);
+    let remaining = 10;
+    const tick = window.setInterval(() => {
+      remaining -= 1;
+      setRapidSeconds(remaining);
+      if (remaining <= 0) {
+        clearInterval(tick);
+        setRapidPrompt((currentPrompt) =>
+          currentPrompt?.eventId === prompt.eventId ? null : currentPrompt,
+        );
+        setGame((g) => (g ? closeFastPlayWindow(g, prompt.rank, prompt.eventId) : g));
+      }
+    }, 1000);
+    return () => clearInterval(tick);
+  }, [mayOfferRapidPlay, rapidEvent?.id, game?.lastFastMatchValue]);
   const toast = (t: string) => {
     setNotice(t);
     window.setTimeout(() => setNotice(""), 2800);
@@ -258,6 +314,20 @@ function App() {
     new Set(selection.map((i) => matchValue(humanCards[i]!))).size === 1;
   const onCardClick = (player: PlayerView, index: number) => {
     if (!game) return;
+    if (rapidPrompt && player.human && player.occupied[index]) {
+      const next = attemptQuickPlay(game, 0, index);
+      if (next !== game) {
+        setGame(next);
+        setSelection([]);
+        setRapidPrompt(null);
+        toast(
+          next.message.includes("Mauvaise pose")
+            ? "Mauvaise carte : une carte de pénalité a rejoint votre main."
+            : "Pose rapide réussie !",
+        );
+      }
+      return;
+    }
     if (game.phase === "peek" && player.human) {
       remember(index);
       return;
@@ -308,14 +378,7 @@ function App() {
         return;
       }
     }
-    if (game.lastFastMatchValue !== null && player.human) {
-      const knownCard = player.cards[index];
-      if (knownCard && matchValue(knownCard) === game.lastFastMatchValue) {
-        mutate((g) => quickPlay(g, 0, knownCard));
-        toast("Pose rapide !");
-        return;
-      }
-    }
+    if (game.lastFastMatchValue !== null && player.human) return;
     if (game.lastFastMatchValue !== null && !player.human) {
       return;
     }
@@ -764,7 +827,7 @@ function App() {
         )}
         {screen === "game" && game && (
           <motion.section
-            className={`game-screen ${speed ? "motion-fast" : ""} ${reduceMotion ? "reduce-motion" : ""} quality-${quality} effect-${game.effect ?? "none"}`}
+            className={`game-screen ${speed ? "motion-fast" : ""} ${reduceMotion ? "reduce-motion" : ""} ${rapidPrompt ? "rapid-window-open" : ""} quality-${quality} effect-${game.effect ?? "none"}`}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
           >
@@ -960,6 +1023,86 @@ function App() {
                 {sound ? <Volume2 size={16} /> : <VolumeX size={16} />}
               </button>
             </div>
+            <AnimatePresence>
+              {rapidPrompt && rapidPrompt.eventId === rapidEvent?.id && (
+                <motion.aside
+                  key={rapidPrompt.eventId}
+                  className="rapid-play-prompt"
+                  role="status"
+                  aria-live="assertive"
+                  initial={{
+                    opacity: 0,
+                    y: 26,
+                    scale: 0.94,
+                    filter: "blur(8px)",
+                  }}
+                  animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
+                  exit={{
+                    opacity: 0,
+                    y: 18,
+                    scale: 0.96,
+                    filter: "blur(6px)",
+                  }}
+                  transition={{
+                    type: "spring",
+                    stiffness: 260,
+                    damping: 24,
+                  }}
+                >
+                  <span className="rapid-emblem">
+                    <Zap size={17} fill="currentColor" />
+                  </span>
+                  <div className="rapid-copy">
+                    <span className="rapid-eyebrow">
+                      POSE ÉCLAIR · {rapidSeconds} SECONDES
+                    </span>
+                    <strong>Vous avez un rang {rankName(rapidPrompt.rank)} ?</strong>
+                    <small>
+                      Touchez une carte cachée si vous tentez votre chance. Une
+                      erreur ajoute une pénalité.
+                    </small>
+                  </div>
+                  <div
+                    className="rapid-clock"
+                    aria-label={`${rapidSeconds} secondes restantes`}
+                    aria-live="off"
+                  >
+                    <svg viewBox="0 0 44 44" aria-hidden="true">
+                      <circle
+                        className="rapid-clock-track"
+                        cx="22"
+                        cy="22"
+                        r="18"
+                      />
+                      <circle
+                        key={rapidPrompt.eventId}
+                        className="rapid-clock-progress"
+                        cx="22"
+                        cy="22"
+                        r="18"
+                      />
+                    </svg>
+                    <b>{rapidSeconds}</b>
+                  </div>
+                  <button
+                    className="rapid-pass"
+                    onClick={() => {
+                      const eventId = rapidPrompt.eventId;
+                      setGame((g) =>
+                        g
+                          ? closeFastPlayWindow(g, rapidPrompt.rank, eventId)
+                          : g,
+                      );
+                      setRapidPrompt(null);
+                      toast("Vous passez votre tour éclair.");
+                    }}
+                    aria-label="Passer cette pose rapide"
+                  >
+                    Passer
+                  </button>
+                </motion.aside>
+              )}
+            </AnimatePresence>
             <AnimatePresence>
               {notice && (
                 <motion.div
@@ -1267,12 +1410,19 @@ function PlayerSeat({
             onClick={() => onClick(player, i)}
             whileTap={{ scale: 0.96 }}
             title={human ? "Carte face cachée" : player.name}
+            aria-label={human ? `Votre carte ${i + 1}, face cachée` : `${player.name}, carte ${i + 1}, face cachée`}
           >
-            {card ? (
+            {player.occupied[i] ? (
+              card ? (
               (human && privateRevealSlot === i) ||
               phase === "round" ||
               phase === "gameover" ? (
                 <CardView card={card} />
+              ) : (
+                <div className={`card-back ${human ? "your-back" : ""}`}>
+                  <span>TT</span>
+                </div>
+              )
               ) : (
                 <div className={`card-back ${human ? "your-back" : ""}`}>
                   <span>TT</span>
