@@ -1568,3 +1568,317 @@ button:focus-visible {
     opacity: 1;
   }
 }
+.setup-options {
+  display: grid;
+  grid-template-columns: 0.7fr 1.3fr;
+  gap: 30px;
+  border: 1px solid var(--line);
+  border-top: 0;
+  padding: 22px 28px;
+  background: #171613;
+}
+.setup-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+.setup-option > small {
+  font-size: 10px;
+  color: #82796c;
+  line-height: 1.5;
+}
+.segmented-control,
+.difficulty-options {
+  display: flex;
+  gap: 6px;
+}
+.segmented-control button,
+.difficulty-options button {
+  border: 1px solid #ffffff20;
+  background: #1b1915;
+  color: #9c9385;
+  padding: 8px 12px;
+  font-size: 10px;
+}
+.segmented-control button.chosen,
+.difficulty-options button.chosen {
+  border-color: #d1aa6a8c;
+  color: #e6cb9c;
+  background: #c99d5518;
+}
+.scores-page h1 {
+  font-size: 58px;
+}
+.global-score-list {
+  border: 1px solid var(--line);
+  background: #171613;
+}
+.global-score-row {
+  display: grid;
+  grid-template-columns: 42px 1fr auto auto;
+  gap: 14px;
+  align-items: center;
+  padding: 15px 19px;
+  border-bottom: 1px solid var(--line);
+  color: #c5bba8;
+}
+.global-score-row:last-child {
+  border: 0;
+}
+.global-score-row b {
+  font: 500 23px "Playfair Display";
+  color: #e2c58f;
+}
+.global-score-row small,
+.rank-number {
+  font: 9px "DM Mono";
+  letter-spacing: 0.1em;
+  color: #88795f;
+}
+.round-history h2 {
+  font: 500 23px "Playfair Display";
+  margin: 36px 0 16px;
+}
+.round-history > p {
+  color: #8b8172;
+}
+.history-row {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 11px;
+  padding: 15px 16px;
+  border-bottom: 1px solid var(--line);
+  background: #171613;
+}
+.history-row > span:first-child {
+  font: 9px "DM Mono";
+  color: #b69863;
+}
+.history-row > span:nth-child(2) {
+  font-size: 11px;
+  color: #d4c6ad;
+}
+.history-row > div {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.history-row > div b {
+  font: 9px "DM Mono";
+  color: #938979;
+  font-weight: 400;
+}
+.range-setting {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 7px;
+  width: 100%;
+  align-items: center;
+  color: #b7ad9a;
+  font-size: 12px;
+  padding: 11px 2px;
+  border-bottom: 1px solid var(--line);
+}
+.range-setting span {
+  font: 10px "DM Mono";
+  color: #d3bd93;
+}
+.range-setting input {
+  grid-column: 1/-1;
+  width: 100%;
+  accent-color: #caa66b;
+}
+.quality-setting {
+  display: grid;
+  gap: 10px;
+  padding: 13px 0;
+  color: #b7ad9a;
+  font-size: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.quality-setting .difficulty-options button {
+  padding: 7px 9px;
+}
+.quality-medium .ambient {
+  opacity: 0.07;
+  filter: blur(70px);
+}
+.quality-medium .playing-card {
+  box-shadow: 0 2px 7px #0005;
+}
+.quality-eco .ambient,
+.quality-eco .spark,
+.quality-eco .table-light {
+  display: none;
+}
+.quality-eco .playing-card {
+  box-shadow: 0 1px 4px #0005;
+}
+.reduce-motion *,
+.reduce-motion *::before,
+.reduce-motion *::after {
+  scroll-behavior: auto !important;
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}
+.pause-panel {
+  max-height: calc(100dvh - 36px);
+  overflow: auto;
+}
+.tutorial-progress {
+  display: flex;
+  gap: 8px;
+  margin: 24px 0 28px;
+}
+.gameover-stats {
+  display: flex;
+  justify-content: center;
+  gap: 30px;
+  margin: 20px 0;
+}
+.gameover-stats span {
+  display: grid;
+  gap: 5px;
+}
+.gameover-stats small {
+  color: #a58c64;
+  font:
+    9px "DM Mono",
+    monospace;
+  letter-spacing: 0.12em;
+}
+.gameover-stats b {
+  color: #e6cfaa;
+  font:
+    500 18px "Playfair Display",
+    serif;
+}
+.tutorial-progress span {
+  width: 34px;
+  height: 3px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.14);
+  transition: background 0.25s ease;
+}
+.tutorial-progress span.filled {
+  background: var(--gold, #d7aa66);
+}
+.tutorial-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.8fr) minmax(300px, 1.2fr);
+  align-items: center;
+  gap: clamp(24px, 6vw, 84px);
+}
+.tutorial-copy h1 {
+  max-width: 480px;
+  margin: 14px 0;
+}
+.tutorial-copy > p:not(.eyebrow) {
+  max-width: 490px;
+  color: var(--muted, #b6b0a6);
+  line-height: 1.7;
+}
+.tutorial-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #e6c88f !important;
+}
+.tutorial-controls {
+  display: flex;
+  gap: 12px;
+  margin-top: 26px;
+}
+.tutorial-controls button:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+.tutorial-table {
+  position: relative;
+  min-height: 310px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(211, 174, 119, 0.18);
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(79, 57, 37, 0.52),
+    rgba(22, 22, 20, 0.3) 68%,
+    transparent 70%
+  );
+}
+.tutorial-cards {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.tutorial-card {
+  width: clamp(72px, 9vw, 112px);
+  aspect-ratio: 0.69;
+  margin-left: -12px;
+  border: 1px solid rgba(255, 255, 255, 0.62);
+  border-radius: 12px;
+  background: #e9e4d8;
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.4);
+  display: grid;
+  place-content: center;
+  gap: 5px;
+  font:
+    700 27px Georgia,
+    serif;
+  transition:
+    transform 0.3s ease,
+    box-shadow 0.3s ease;
+}
+.tutorial-card:first-child {
+  margin-left: 0;
+}
+.tutorial-card:not(.revealed) {
+  background: linear-gradient(145deg, #352b21, #171513);
+  border-color: #aa895e;
+}
+.tutorial-card:not(.revealed):hover {
+  transform: translateY(-8px) rotate(-2deg);
+}
+.tutorial-card.revealed {
+  transform: translateY(-16px) rotate(-3deg);
+}
+.tutorial-card.revealed span {
+  font-size: 29px;
+}
+.tutorial-card-back {
+  border: 1px solid rgba(220, 186, 132, 0.5);
+  padding: 18px 13px;
+  color: #e7c990;
+  font:
+    600 15px "DM Mono",
+    monospace;
+}
+.tutorial-table-note {
+  position: absolute;
+  bottom: 24px;
+  color: #c9b28f;
+  font:
+    10px "DM Mono",
+    monospace;
+  letter-spacing: 0.16em;
+}
+@media (max-width: 680px) {
+  .tutorial-layout {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+  .tutorial-copy h1 {
+    font-size: clamp(2.4rem, 11vw, 4rem);
+  }
+  .tutorial-table {
+    min-height: 225px;
+  }
+  .tutorial-card {
+    width: clamp(57px, 17vw, 80px);
+    border-radius: 9px;
+  }
+}

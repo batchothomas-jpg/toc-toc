@@ -1,23 +1,30 @@
 import { describe, expect, it } from "vitest";
 import {
   aiTurn,
+  aiFastReaction,
+  callToc,
   cardValue,
   Card,
+  createCard,
+  discardDrawn,
+  draw,
+  endTurn,
   finishLook,
   makeDeck,
   playPair,
   quickPlay,
+  matchValue,
   revealRound,
+  restoreSavedGame,
   scorePlayer,
+  selectSightCard,
   startGame,
   swap,
   takeDrawn,
+  viewForPlayer,
 } from "./engine";
-const c = (rank: number, suit: Card["suit"] = "♠"): Card => ({
-  id: `${suit}${rank}`,
-  rank,
-  suit,
-});
+const c = (rank: number, suit: Card["suit"] = "♠"): Card =>
+  createCard(rank, suit);
 describe("TOC TOC rules engine", () => {
   it("scores number cards and red and black figures as specified", () => {
     expect(cardValue(c(1))).toBe(1);
@@ -28,6 +35,10 @@ describe("TOC TOC rules engine", () => {
     expect(cardValue(c(11, "♣"))).toBe(0);
     expect(cardValue(c(12, "♠"))).toBe(0);
     expect(cardValue(c(13, "♣"))).toBe(0);
+    expect(c(13, "♣").power).toBe("sighted-swap");
+    expect(c(12, "♠").scoreValue).toBe(0);
+    expect(matchValue(c(12, "♠"))).toBe(matchValue(c(12, "♥")));
+    expect(matchValue(c(12, "♠"))).not.toBe(matchValue(c(11, "♥")));
   });
   it("creates a complete deck and deals four cards to each player", () => {
     const g = startGame(undefined, () => 0.42);
@@ -39,19 +50,111 @@ describe("TOC TOC rules engine", () => {
   });
   it("allows groups of matching values to be laid down", () => {
     const g = startGame();
+    g.phase = "play";
     g.players[0].cards = [c(7), c(7, "♥"), c(2), c(3)];
     const next = playPair(g, [0, 1]);
     expect(next.players[0].cards.slice(0, 2)).toEqual([null, null]);
     expect(next.discard.slice(-2).map(cardValue)).toEqual([7, 7]);
   });
+  it("allows three and four cards of the same rank to be laid together", () => {
+    const g = startGame();
+    g.phase = "play";
+    g.players[0].cards = [c(13, "♠"), c(13, "♥"), c(13, "♦"), c(13, "♣")];
+    expect(playPair(g, [0, 1, 2]).players[0].cards).toEqual([
+      null,
+      null,
+      null,
+      c(13, "♣"),
+    ]);
+    expect(playPair(g, [0, 1, 2, 3]).phase).toBe("round");
+  });
   it("allows one matching card to be played immediately out of turn", () => {
     const g = startGame();
-    g.lastFastValue = 8;
+    g.lastFastMatchValue = 8;
     g.players[2].cards = [c(8, "♥"), c(3), c(4), c(5)];
     const next = quickPlay(g, 2, c(8, "♥"));
     expect(next.players[2].cards[0]).toBeNull();
     expect(next.discard.at(-1)).toEqual(c(8, "♥"));
-    expect(next.lastFastValue).toBeNull();
+    expect(next.lastFastMatchValue).toBe(8);
+  });
+  it("lets a knowledgeable AI react using its own memory", () => {
+    const g = startGame();
+    g.phase = "play";
+    g.lastFastMatchValue = 9;
+    g.players[1].known = [null, null, null, null];
+    g.players[3].known = [null, null, null, null];
+    g.players[2].cards[0] = c(9, "♦");
+    g.players[2].known[0] = c(9, "♦");
+    const next = aiFastReaction(g, () => 0);
+    expect(next.players[2].cards[0]).toBeNull();
+    expect(next.events.at(-1)?.actor).toBe(2);
+  });
+  it("ends the turn after a drawn card is refused", () => {
+    const g = startGame();
+    g.phase = "discard";
+    g.drawn = c(4, "♦");
+    const next = discardDrawn(g);
+    expect(next.current).toBe(1);
+    expect(next.phase).toBe("play");
+    expect(next.discard.at(-1)).toEqual(c(4, "♦"));
+  });
+  it("only allows TOC TOC at the start of a turn, before drawing", () => {
+    const g = startGame();
+    g.phase = "play";
+    g.tocAllowed = true;
+    g.players[0].cards = [c(1), c(1), c(1), c(1)];
+    g.players[1].cards = [c(2), c(2), c(2), c(2)];
+    g.players[2].cards = [c(3), c(3), c(3), c(3)];
+    g.players[3].cards = [c(4), c(4), c(4), c(4)];
+    expect(callToc(g).phase).toBe("round");
+    const drawn = draw(g);
+    expect(drawn.tocAllowed).toBe(false);
+    expect(callToc(drawn)).toBe(drawn);
+    drawn.phase = "play";
+    expect(endTurn(drawn).tocAllowed).toBe(true);
+  });
+  it("keeps opponents' cards private in the player view", () => {
+    const g = startGame();
+    expect(viewForPlayer(g, 0).players[1].cards).toEqual([
+      null,
+      null,
+      null,
+      null,
+    ]);
+    g.players[0].known[0] = g.players[0].cards[0];
+    g.players[0].known[1] = g.players[0].cards[1];
+    expect(viewForPlayer(g, 0).players[0].cards.filter(Boolean)).toHaveLength(
+      2,
+    );
+    g.phase = "round";
+    expect(viewForPlayer(g, 0).players[1].cards.filter(Boolean)).toHaveLength(
+      4,
+    );
+  });
+  it("restores old saves and derives current card metadata", () => {
+    const g = startGame();
+    const legacy = JSON.parse(JSON.stringify(g));
+    delete legacy.cardLocations;
+    delete legacy.roundHistory;
+    delete legacy.events;
+    for (const card of [
+      ...legacy.deck,
+      ...legacy.discard,
+      ...legacy.players.flatMap((p: { cards: unknown[] }) => p.cards),
+    ]) {
+      if (card) {
+        delete card.color;
+        delete card.scoreValue;
+        delete card.matchValue;
+        delete card.power;
+      }
+    }
+    const restored = restoreSavedGame(legacy)!;
+    expect(restored.cardLocations).toBeDefined();
+    expect(matchValue(restored.players[0].cards[0]!)).toBe(
+      restored.players[0].cards[0]!.rank,
+    );
+    expect(restored.roundHistory).toEqual([]);
   });
   it("keeps black queens blind and forgets both cards after the exchange", () => {
     const g = startGame();
@@ -76,7 +179,8 @@ describe("TOC TOC rules engine", () => {
     g.players[0].cards[0] = c(9);
     g.players[1].cards[0] = c(3);
     const power = takeDrawn(g, 0);
-    const result = swap(power, 0, 1, 0);
+    const sighted = selectSightCard(power, 0);
+    const result = swap(sighted, 0, 1, 0);
     expect(result.players[0].known[0]).toEqual(c(3));
     expect(result.players[1].known[0]).toBeNull();
     expect(result.message).toContain("Roi");
@@ -105,6 +209,7 @@ describe("TOC TOC rules engine", () => {
   });
   it("ends the hand when last cards are laid and awards each player their own total", () => {
     const g = startGame();
+    g.phase = "play";
     g.players.forEach((p) => (p.cards = [c(2), c(3), c(4), c(5)]));
     g.players[0].cards = [c(2), c(2, "♥"), null, null];
     const next = playPair(g, [0, 1]);
