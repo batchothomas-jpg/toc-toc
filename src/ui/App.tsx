@@ -27,6 +27,7 @@ import {
   callToc,
   Card,
   closeFastPlayWindow,
+  createCard,
   Difficulty,
   matchValue,
   draw,
@@ -54,6 +55,44 @@ import Tutorial from "./Tutorial";
 type Screen = "home" | "mode" | "rules" | "tutorial" | "scores" | "game";
 const names = ["Vous", "Léonie", "Marcel", "Iris"];
 const fmt = (n: number) => String(n).padStart(2, "0");
+const ruleSections = [
+  [
+    "But du jeu",
+    "Gardez le moins de points possible. Une partie se joue sur plusieurs manches : lorsqu’un joueur atteint 100 points, le joueur au total le plus bas remporte la partie.",
+  ],
+  [
+    "Mise en place",
+    "Chaque joueur reçoit quatre cartes face cachée. Au début d’une manche, regardez exactement deux de vos cartes puis mémorisez-les.",
+  ],
+  [
+    "Valeur des cartes",
+    "L’As vaut 1, les cartes de 2 à 10 valent leur valeur faciale. Les figures rouges valent 11, 12 et 13 ; les figures noires valent 0. Leur rang et leur pouvoir restent identiques.",
+  ],
+  [
+    "Déroulement d’un tour",
+    "Piochez une carte. Gardez-la en l’échangeant avec l’une de vos cartes, ou refusez-la en la posant sur la défausse. Refuser termine votre tour.",
+  ],
+  [
+    "Poser des cartes identiques",
+    "À votre tour, posez de deux à quatre cartes de même rang. Après une pose, chaque joueur peut réagir immédiatement avec une carte du même rang, avant qu’une autre carte ne soit posée.",
+  ],
+  [
+    "Les pouvoirs",
+    "Valet : regardez une de vos cartes. Dame : échangez à l’aveugle une carte avec un adversaire. Roi : regardez votre carte, échangez-la, puis regardez celle récupérée.",
+  ],
+  [
+    "TOC TOC !",
+    "Au début de votre tour, avant de piocher, annoncez TOC TOC. Tout le monde révèle alors ses cartes. Il faut avoir strictement moins de points que chacun des autres joueurs.",
+  ],
+  [
+    "Fin de manche",
+    "Si TOC TOC réussit, chacun marque ses propres points. En cas d’égalité ou si un joueur a moins, l’annonceur prend en plus tous les points des autres. La manche se termine aussi quand un joueur n’a plus de cartes.",
+  ],
+  [
+    "Fin de la partie",
+    "Les scores s’accumulent entre les manches. Dès qu’un joueur atteint 100 points ou plus, la partie s’arrête ; le joueur ayant le moins de points gagne.",
+  ],
+];
 function App() {
   const [game, setGame] = useState<Game | null>(() => {
     try {
@@ -87,6 +126,8 @@ function App() {
   const [quality, setQuality] = useState<"high" | "medium" | "eco">("high");
   const [effectVolume, setEffectVolume] = useState(70);
   const [musicVolume, setMusicVolumeState] = useState(0);
+  const [ruleIndex, setRuleIndex] = useState(0);
+  const [tableRoom, setTableRoom] = useState<string | null>(null);
   const view = game ? viewForPlayer(game, 0) : null;
   const current = view?.players[view.current];
   const start = () => {
@@ -98,6 +139,15 @@ function App() {
     setSelection([]);
   };
   const mutate = (fn: (g: Game) => Game) => setGame((g) => (g ? fn(g) : g));
+  useEffect(() => {
+    let active = true;
+    import("../assets/cardRoom").then(({ default: image }) => {
+      if (active) setTableRoom(image);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
   useEffect(() => {
     try {
       if (game) localStorage.setItem("toc-toc-save", JSON.stringify(game));
@@ -298,7 +348,16 @@ function App() {
       reducedMotion={reduceMotion ? "always" : "never"}
       transition={{ duration: reduceMotion ? 0.01 : speed ? 0.2 : 0.38 }}
     >
-      <main className="app-shell">
+      <main
+        className="app-shell"
+        style={
+          {
+            "--card-room": tableRoom
+              ? `url(${tableRoom})`
+              : "linear-gradient(#21170d, #0b0a08)",
+          } as React.CSSProperties
+        }
+      >
         <div className="ambient ambient-a" />
         <div className="ambient ambient-b" />
         {screen === "home" && (
@@ -318,24 +377,24 @@ function App() {
             <div className="hero-copy">
               <p className="eyebrow">
                 <span />
-                LE JEU DE CARTES QUI NE DIT PAS SON DERNIER MOT
+                UNE TABLE. QUATRE CARTES. UNE MÉMOIRE.
               </p>
               <h1>
-                Gardez
+                TOC <b>TOC</b>
                 <br />
                 <i>l’œil ouvert.</i>
               </h1>
               <p className="hero-description">
-                Quatre cartes. Une mémoire imparfaite.
+                Le jeu de cartes où il faut avoir le moins de points.
                 <br />
-                Et le bon moment pour dire <em>TOC TOC.</em>
+                Mémorisez. Échangez. Puis choisissez le bon moment.
               </p>
               <div className="hero-actions">
                 <button
                   className="button button-gold"
                   onClick={() => setScreen("mode")}
                 >
-                  Lancer une partie <ArrowRight size={17} />
+                  JOUER <Play size={16} fill="currentColor" />
                 </button>
                 <button
                   className="button button-quiet"
@@ -358,6 +417,12 @@ function App() {
               <div className="hero-card back-card">
                 <span>TT</span>
               </div>
+              <div className="hero-card fan-card fan-card-left">
+                <span className="card-corner">
+                  Q<br />♥
+                </span>
+                <span className="hero-suit">♥</span>
+              </div>
               <div className="hero-card front-card">
                 <span className="card-corner">
                   K<br />♦
@@ -366,6 +431,12 @@ function App() {
                 <span className="card-corner bottom">
                   K<br />♦
                 </span>
+              </div>
+              <div className="hero-card fan-card fan-card-right">
+                <span className="card-corner">
+                  J<br />♠
+                </span>
+                <span className="hero-suit">♠</span>
               </div>
               <div className="spark spark-one">✦</div>
               <div className="spark spark-two">✧</div>
@@ -477,6 +548,35 @@ function App() {
               </span>
               <span className="coming-tag">À VENIR</span>
             </div>
+            <div className="mode-shortcuts">
+              <button disabled className="mode-shortcut">
+                <span className="mode-shortcut-icon">◎</span>
+                <span>
+                  <b>Multijoueur en ligne</b>
+                  <small>Créez ou rejoignez une partie</small>
+                </span>
+                <span className="coming-tag">À VENIR</span>
+              </button>
+              <button disabled className="mode-shortcut">
+                <span className="mode-shortcut-icon">♟</span>
+                <span>
+                  <b>Multijoueur local</b>
+                  <small>Jouez sur le même appareil</small>
+                </span>
+                <span className="coming-tag">À VENIR</span>
+              </button>
+              <button
+                className="mode-shortcut"
+                onClick={() => setScreen("tutorial")}
+              >
+                <span className="mode-shortcut-icon">✦</span>
+                <span>
+                  <b>Tutoriel interactif</b>
+                  <small>Apprenez les règles pas à pas</small>
+                </span>
+                <ArrowRight size={15} />
+              </button>
+            </div>
           </motion.section>
         )}
         {screen === "rules" && (
@@ -497,53 +597,93 @@ function App() {
               <br />
               <i>en un clin d’œil.</i>
             </h1>
-            <div className="rules-grid">
-              <article>
-                <span className="rule-number">01</span>
-                <h3>Gardez vos cartes secrètes</h3>
-                <p>
-                  Chaque joueur reçoit 4 cartes face cachée. Au début,
-                  regardez-en 2 et mémorisez-les. À votre tour, piochez puis
-                  échangez avec une de vos cartes, ou défaussez.
-                </p>
-              </article>
-              <article>
-                <span className="rule-number">02</span>
-                <h3>Les figures ont un pouvoir</h3>
-                <p>
-                  <b>Valet</b> : regardez une de vos cartes. <b>Dame</b> :
-                  échangez à l’aveugle avec un adversaire. <b>Roi</b> : regardez
-                  votre carte et celle reçue à la fin de l’échange.
-                </p>
-              </article>
-              <article>
-                <span className="rule-number">03</span>
-                <h3>Posez les cartes de même rang</h3>
-                <p>
-                  À votre tour, posez 2 à 4 cartes de même rang. Hors tour,
-                  posez immédiatement une carte de ce rang après une pose, avant
-                  toute autre carte. La couleur ne compte pas : un Roi noir
-                  correspond à un Roi rouge, même si leurs scores diffèrent.
-                </p>
-              </article>
-              <article>
-                <span className="rule-number">04</span>
-                <h3>Osez le TOC TOC</h3>
-                <p>
-                  Au début de votre tour, avant de piocher, annoncez TOC TOC.
-                  Tout le monde révèle ses cartes. Si votre total est
-                  strictement le plus bas, chacun marque ses points. Sinon, vous
-                  prenez tous les points des autres.
-                </p>
-              </article>
-              <article className="rule-wide">
-                <span className="rule-number">05</span>
-                <h3>Visez le score le plus bas</h3>
-                <p>
-                  As = 1 · 2 à 10 = valeur faciale · Valet rouge = 11 · Dame
-                  rouge = 12 · Roi rouge = 13 · Figures noires = 0. Dès 100
-                  points, la partie s’arrête : le score le plus bas gagne.
-                </p>
+            <div className="rules-layout">
+              <nav className="rules-nav" aria-label="Rubriques des règles">
+                {ruleSections.map(([title], index) => (
+                  <button
+                    key={title}
+                    className={ruleIndex === index ? "selected" : ""}
+                    onClick={() => setRuleIndex(index)}
+                  >
+                    <span>›</span>
+                    {title}
+                  </button>
+                ))}
+              </nav>
+              <article className="rules-reading">
+                <span className="rule-number">
+                  RÈGLE {String(ruleIndex + 1).padStart(2, "0")}
+                </span>
+                <h2>{ruleSections[ruleIndex][0]}</h2>
+                <p>{ruleSections[ruleIndex][1]}</p>
+                {ruleIndex === 2 && (
+                  <div className="rule-card-showcase">
+                    {[
+                      [createCard(1, "♠"), "1 point"],
+                      [createCard(2, "♠"), "leur valeur"],
+                      [createCard(11, "♥"), "11 points"],
+                      [createCard(12, "♦"), "12 points"],
+                      [createCard(13, "♥"), "13 points"],
+                      [createCard(11, "♣"), "0 point"],
+                      [createCard(12, "♠"), "0 point"],
+                      [createCard(13, "♣"), "0 point"],
+                    ].map(([card, value], index) => (
+                      <div className="rule-example-card" key={index}>
+                        <CardView card={card as Card} small />
+                        <span>{value as string}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {ruleIndex === 5 && (
+                  <div className="rule-power-examples">
+                    {[
+                      [
+                        createCard(11, "♣"),
+                        "VALET",
+                        "Regardez une de vos cartes.",
+                      ],
+                      [createCard(12, "♥"), "DAME", "Échangez sans regarder."],
+                      [
+                        createCard(13, "♠"),
+                        "ROI",
+                        "Voyez la carte avant et après.",
+                      ],
+                    ].map(([card, title, text], index) => (
+                      <div className="rule-power-card" key={index}>
+                        <CardView card={card as Card} />
+                        <span>
+                          <b>{title as string}</b>
+                          <small>{text as string}</small>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="rules-pager">
+                  <button
+                    disabled={ruleIndex === 0}
+                    onClick={() => setRuleIndex(Math.max(0, ruleIndex - 1))}
+                    aria-label="Règle précédente"
+                  >
+                    ‹
+                  </button>
+                  <span>
+                    {String(ruleIndex + 1).padStart(2, "0")} /{" "}
+                    {String(ruleSections.length).padStart(2, "0")}
+                  </span>
+                  <button
+                    disabled={ruleIndex === ruleSections.length - 1}
+                    onClick={() =>
+                      setRuleIndex(
+                        Math.min(ruleSections.length - 1, ruleIndex + 1),
+                      )
+                    }
+                    aria-label="Règle suivante"
+                  >
+                    ›
+                  </button>
+                </div>
               </article>
             </div>
             <button
@@ -736,69 +876,75 @@ function App() {
                 </span>
               </div>
               <div className="dock-actions">
-                {game.phase === "peek" && (
-                  <span className="action-hint">
-                    <Eye size={15} /> Regardez {game.peekLeft} carte
-                    {game.peekLeft > 1 ? "s" : ""}
-                  </span>
-                )}
-                {game.phase === "play" && game.current === 0 && (
-                  <>
-                    {game.tocAllowed && (
+                <div className="action-tools">
+                  {game.phase === "peek" && (
+                    <span className="action-hint">
+                      <Eye size={15} /> Regardez {game.peekLeft} carte
+                      {game.peekLeft > 1 ? "s" : ""}
+                    </span>
+                  )}
+                  {game.phase === "play" && game.current === 0 && (
+                    <>
                       <button
                         className="button button-outline"
-                        onClick={() => mutate(callToc)}
+                        disabled={!validPair}
+                        onClick={() => {
+                          mutate((g) => playPair(g, selection));
+                          setSelection([]);
+                        }}
                       >
-                        <span className="toc-icon">!</span> TOC TOC
+                        <Zap size={15} /> Poser{" "}
+                        {selection.length > 0
+                          ? `(${selection.length})`
+                          : "les cartes"}
                       </button>
-                    )}
-                    <button
-                      className="button button-outline"
-                      disabled={!validPair}
-                      onClick={() => {
-                        mutate((g) => playPair(g, selection));
-                        setSelection([]);
-                      }}
-                    >
-                      <Zap size={15} /> Poser{" "}
-                      {selection.length > 0 ? `(${selection.length})` : ""}
-                    </button>
-                    <button
-                      className="button button-gold"
-                      onClick={() => mutate(endTurn)}
-                    >
-                      Terminer <ArrowRight size={15} />
-                    </button>
-                  </>
-                )}
-                {game.phase === "discard" && game.current === 0 && (
-                  <>
+                      <button
+                        className="button button-gold"
+                        onClick={() => mutate(endTurn)}
+                      >
+                        Terminer <ArrowRight size={15} />
+                      </button>
+                    </>
+                  )}
+                  {game.phase === "discard" && game.current === 0 && (
+                    <>
+                      <span className="action-hint">
+                        Échangez une carte ou défaussez
+                      </span>
+                      <button
+                        className="button button-gold"
+                        onClick={() => mutate(discardDrawn)}
+                      >
+                        Défausser <ArrowRight size={15} />
+                      </button>
+                    </>
+                  )}
+                  {game.phase === "power" && (
                     <span className="action-hint">
-                      Échangez une carte ou défaussez
+                      <Eye size={15} />
+                      {game.message}
                     </span>
+                  )}
+                  {(game.phase === "round" || game.phase === "gameover") && (
                     <button
                       className="button button-gold"
-                      onClick={() => mutate(discardDrawn)}
+                      onClick={game.phase === "round" ? reload : start}
                     >
-                      Défausser <ArrowRight size={15} />
+                      {game.phase === "round" ? "Manche suivante" : "Rejouer"}{" "}
+                      <ArrowRight size={15} />
                     </button>
-                  </>
-                )}
-                {game.phase === "power" && (
-                  <span className="action-hint">
-                    <Eye size={15} />
-                    {game.message}
-                  </span>
-                )}
-                {(game.phase === "round" || game.phase === "gameover") && (
-                  <button
-                    className="button button-gold"
-                    onClick={game.phase === "round" ? reload : start}
-                  >
-                    {game.phase === "round" ? "Manche suivante" : "Rejouer"}{" "}
-                    <ArrowRight size={15} />
-                  </button>
-                )}
+                  )}
+                </div>
+                {game.phase === "play" &&
+                  game.current === 0 &&
+                  game.tocAllowed && (
+                    <button
+                      className="button button-toc"
+                      onClick={() => mutate(callToc)}
+                    >
+                      <span className="toc-icon">!</span> TOC TOC !
+                    </button>
+                  )}
               </div>
               <button
                 className={`sound-toggle ${sound ? "" : "muted"}`}
@@ -840,7 +986,7 @@ function App() {
             {game.phase === "round" && (
               <div className="overlay">
                 <motion.div
-                  className="result-panel"
+                  className={`result-panel ${game.roundWinner === 0 ? "result-win" : game.tocCaller === 0 ? "result-fail" : ""}`}
                   initial={{ opacity: 0, scale: 0.92, y: 20 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                 >
@@ -1040,13 +1186,29 @@ function App() {
 function CardView({ card, small = false }: { card: Card; small?: boolean }) {
   return (
     <div
-      className={`playing-card ${red(card) ? "red-card" : "black-card"} ${small ? "card-small" : ""}`}
+      className={`playing-card ${red(card) ? "red-card" : "black-card"} ${card.rank >= 11 ? "figure-card" : "pip-card"} ${small ? "card-small" : ""}`}
     >
       <span className="corner top">
         <b>{face(card)}</b>
         {card.suit}
       </span>
-      <span className="card-center">{card.suit}</span>
+      {card.rank >= 11 ? (
+        <span
+          className={`card-portrait portrait-${face(card).toLowerCase()}`}
+          aria-hidden="true"
+        >
+          <Crown size={small ? 10 : 17} strokeWidth={1.5} />
+          <span className="portrait-head" />
+          <span className="portrait-body" />
+          <b>{face(card)}</b>
+          <i>{card.suit}</i>
+        </span>
+      ) : (
+        <span className={`card-center ${card.rank === 1 ? "ace-center" : ""}`}>
+          {card.suit}
+          {card.rank > 1 && <small>{card.suit}</small>}
+        </span>
+      )}
       <span className="corner bottom">
         <b>{face(card)}</b>
         {card.suit}
