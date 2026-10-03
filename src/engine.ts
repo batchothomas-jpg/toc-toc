@@ -211,7 +211,7 @@ export function startGame(
       color: ["#d7aa66", "#a7c1b2", "#c48c92", "#9d9bd3"][i],
     };
   });
-  const discard = [deck.pop()!];
+  const discard: Card[] = [];
   const game: Omit<Game, "cardLocations"> = {
     players,
     roundHistory: [],
@@ -424,7 +424,7 @@ export function nextRound(g: Game, random = Math.random): Game {
     ...g,
     players,
     deck,
-    discard: [deck.pop()!],
+    discard: [],
     current: 0,
     phase: "peek",
     peekLeft: 2,
@@ -461,6 +461,36 @@ export function rememberCard(g: Game, player: number, slot: number): Game {
         ? { ...p, known: p.known.map((c, j) => (j === slot ? card : c)) }
         : p,
     ),
+  };
+}
+/** Finish the private 30-second memory setup and choose the opening player. */
+export function finishInitialPeek(g: Game, random = Math.random): Game {
+  if (g.phase !== "peek") return g;
+  const human = g.players[0];
+  const unknown = human.cards.flatMap((card, slot) =>
+    card && !human.known[slot] ? [slot] : [],
+  );
+  const fillCount = Math.max(0, 2 - human.known.filter(Boolean).length);
+  const remembered = shuffled(unknown, random).slice(0, fillCount);
+  const players = g.players.map((player, index) =>
+    index === 0
+      ? {
+          ...player,
+          known: player.known.map((card, slot) =>
+            remembered.includes(slot) ? player.cards[slot] : card,
+          ),
+        }
+      : player,
+  );
+  const current = Math.floor(random() * g.players.length);
+  return {
+    ...g,
+    players,
+    current,
+    phase: "play",
+    peekLeft: 0,
+    tocAllowed: true,
+    message: `Mémorisation terminée. ${g.players[current].name} commence.`,
   };
 }
 export function draw(g: Game): Game {
@@ -515,7 +545,8 @@ export function takeDrawn(g: Game, slot: number): Game {
       cardIds: [g.drawn.id, g.players[g.current].cards[slot]!.id],
     },
   );
-  return resolvePower(next, g.current, slot, g.drawn);
+  const powered = resolvePower(next, g.current, slot, g.drawn);
+  return powered.phase === "play" ? endTurn(powered) : powered;
 }
 export function discardDrawn(g: Game): Game {
   if (g.phase !== "discard" || !g.drawn) return g;
@@ -569,7 +600,7 @@ function resolvePower(g: Game, player: number, slot: number, c: Card): Game {
   return {
     ...g,
     phase: "play",
-    message: "Carte échangée. Posez éventuellement une paire ou terminez.",
+    message: "Carte échangée.",
   };
 }
 export function finishLook(g: Game, slot: number): Game {
@@ -577,29 +608,31 @@ export function finishLook(g: Game, slot: number): Game {
     g.effect === "look" &&
     Number.isInteger(slot) &&
     !!g.players[g.actor].cards[slot]
-    ? recordEvent(
-        {
-          ...g,
-          players: g.players.map((p, i) =>
-            i === g.actor
-              ? {
-                  ...p,
-                  known: p.known.map((c, j) =>
-                    j === slot ? p.cards[slot] : c,
-                  ),
-                }
-              : p,
-          ),
-          phase: "play",
-          effect: null,
-          message: `Vous avez mémorisé ${face(g.players[g.actor].cards[slot]!)} ${g.players[g.actor].cards[slot]!.suit}. Carte remise face cachée.`,
-        },
-        {
-          type: "look",
-          actor: g.actor,
-          slots: [slot],
-          cardIds: [g.players[g.actor].cards[slot]!.id],
-        },
+    ? endTurn(
+        recordEvent(
+          {
+            ...g,
+            players: g.players.map((p, i) =>
+              i === g.actor
+                ? {
+                    ...p,
+                    known: p.known.map((c, j) =>
+                      j === slot ? p.cards[slot] : c,
+                    ),
+                  }
+                : p,
+            ),
+            phase: "play",
+            effect: null,
+            message: `Vous avez mémorisé ${face(g.players[g.actor].cards[slot]!)} ${g.players[g.actor].cards[slot]!.suit}. Carte remise face cachée.`,
+          },
+          {
+            type: "look",
+            actor: g.actor,
+            slots: [slot],
+            cardIds: [g.players[g.actor].cards[slot]!.id],
+          },
+        ),
       )
     : g;
 }
@@ -661,24 +694,26 @@ export function swap(
   players[targetPlayer].cards[targetSlot] = my;
   players[g.actor].known[ownSlot] = g.effect === "sight-target" ? theirs : null;
   players[targetPlayer].known[targetSlot] = null;
-  return recordEvent(
-    {
-      ...g,
-      players,
-      phase: "play",
-      effect: null,
-      message:
-        g.effect === "sight-target"
-          ? `Roi : vous avez vu ${face(my)} ${my.suit} partir et ${face(theirs)} ${theirs.suit} revenir.`
-          : "Échange effectué à l’aveugle.",
-    },
-    {
-      type: "swap",
-      actor: g.actor,
-      target: targetPlayer,
-      slots: [ownSlot, targetSlot],
-      cardIds: [my.id, theirs.id],
-    },
+  return endTurn(
+    recordEvent(
+      {
+        ...g,
+        players,
+        phase: "play",
+        effect: null,
+        message:
+          g.effect === "sight-target"
+            ? `Roi : vous avez vu ${face(my)} ${my.suit} partir et ${face(theirs)} ${theirs.suit} revenir.`
+            : "Échange effectué à l’aveugle.",
+      },
+      {
+        type: "swap",
+        actor: g.actor,
+        target: targetPlayer,
+        slots: [ownSlot, targetSlot],
+        cardIds: [my.id, theirs.id],
+      },
+    ),
   );
 }
 export function playPair(
@@ -752,7 +787,7 @@ export function endTurn(g: Game): Game {
     tocAllowed: true,
     lastFastMatchValue: null,
     phase: "play",
-    message: `Au tour de ${g.players[current].name}.`,
+    message: `${g.message} · Au tour de ${g.players[current].name}.`,
   };
 }
 export function quickPlay(g: Game, player: number, card: Card): Game {
@@ -805,17 +840,19 @@ export function attemptQuickPlay(g: Game, player: number, slot: number): Game {
     return g;
   const card = g.players[player].cards[slot];
   if (!card) return g;
-  if (matchValue(card) === g.lastFastMatchValue) return quickPlay(g, player, card);
+  if (matchValue(card) === g.lastFastMatchValue)
+    return quickPlay(g, player, card);
 
   const deck = [...g.deck];
   let discard = [...g.discard];
   const penalty =
     deck.pop() ??
-    (discard.length > 1
-      ? discard.splice(discard.length - 2, 1)[0]
-      : undefined);
+    (discard.length > 1 ? discard.splice(discard.length - 2, 1)[0] : undefined);
   if (!penalty)
-    return { ...g, message: "La pioche est vide : aucune pénalité disponible." };
+    return {
+      ...g,
+      message: "La pioche est vide : aucune pénalité disponible.",
+    };
   const players = g.players.map((p, i) =>
     i === player
       ? { ...p, cards: [...p.cards, penalty], known: [...p.known, null] }
@@ -828,7 +865,8 @@ export function attemptQuickPlay(g: Game, player: number, slot: number): Game {
       deck,
       discard,
       lastFastMatchValue: null,
-      message: "Mauvaise pose : une carte de pénalité est ajoutée à votre main.",
+      message:
+        "Mauvaise pose : une carte de pénalité est ajoutée à votre main.",
     },
     { type: "penalty", actor: player },
   );
@@ -915,19 +953,91 @@ function tocWinProbability(game: Game, actor: number, random: () => number) {
   return wins / samples;
 }
 export function aiTurn(g: Game, random = Math.random): Game {
-  if (g.players[g.current].human || g.phase !== "play") return g;
+  if (g.players[g.current].human) return g;
+  const player = g.players[g.current];
+  if (g.phase === "discard") {
+    if (!g.drawn) return endTurn({ ...g, phase: "play" });
+    const difficulty = player.difficulty ?? "normal";
+    const known = player.known
+      .map((card, slot) => (card && player.cards[slot] ? slot : -1))
+      .filter((slot) => slot >= 0);
+    const knownWorst = [...known].sort(
+      (a, b) => cardValue(player.known[b]!) - cardValue(player.known[a]!),
+    )[0];
+    const meanUnseen =
+      makeDeck(() => 0)
+        .filter(
+          (card) =>
+            !g.discard.some((seen) => seen.id === card.id) &&
+            !player.known.some((seen) => seen?.id === card.id),
+        )
+        .reduce(
+          (sum, card, _, cards) => sum + cardValue(card) / cards.length,
+          0,
+        ) || 5.6;
+    const expected =
+      knownWorst === undefined
+        ? meanUnseen
+        : cardValue(player.known[knownWorst]!);
+    const drawn = g.drawn;
+    const keep =
+      drawn.power !== null ||
+      (difficulty === "easy"
+        ? random() < 0.52
+        : cardValue(drawn) < expected ||
+          (difficulty === "hard" && cardValue(drawn) <= expected) ||
+          (difficulty === "expert" && cardValue(drawn) <= expected + 1));
+    if (!keep) return discardDrawn(g);
+    const unknown = player.cards.flatMap((card, slot) =>
+      card && !player.known[slot] ? [slot] : [],
+    );
+    const slot =
+      knownWorst !== undefined && cardValue(drawn) <= expected
+        ? knownWorst
+        : unknown.length
+          ? unknown[Math.floor(random() * unknown.length)]
+          : knownWorst;
+    if (slot === undefined) return discardDrawn(g);
+    return takeDrawn(g, slot);
+  }
+  if (g.phase === "power") {
+    const actor = g.actor;
+    if (g.players[actor].human) return g;
+    if (g.effect === "look") {
+      const candidates = g.players[actor].cards.flatMap((card, slot) =>
+        card ? [slot] : [],
+      );
+      return finishLook(
+        g,
+        candidates[Math.floor(random() * candidates.length)] ?? 0,
+      );
+    }
+    if (g.effect === "blind" || g.effect === "sight-target") {
+      const own = g.effect === "sight-target" ? g.slot : g.slot;
+      const enemy = (actor + 1) % g.players.length;
+      const targetSlots = g.players[enemy].cards.flatMap((card, slot) =>
+        card ? [slot] : [],
+      );
+      return own === null || !targetSlots.length
+        ? endTurn({ ...g, phase: "play", effect: null })
+        : swap(
+            g,
+            own,
+            enemy,
+            targetSlots[Math.floor(random() * targetSlots.length)],
+          );
+    }
+    return endTurn({ ...g, phase: "play", effect: null });
+  }
+  if (g.phase !== "play") return g;
   let game = g;
   if (game.lastFastMatchValue !== null) {
     const knownMatch = game.players[game.current].known.find(
       (card) => card && matchValue(card) === game.lastFastMatchValue,
     );
-    if (knownMatch) {
-      game = quickPlay(game, game.current, knownMatch);
-      return game;
-    }
-    if (game.phase !== "play") return game;
+    if (knownMatch) return quickPlay(game, game.current, knownMatch);
   }
-  let p = game.players[game.current];
+  const p = game.players[game.current];
   const difficulty = p.difficulty ?? "normal";
   const callThreshold: Record<Difficulty, number> = {
     easy: 0.32,
@@ -935,98 +1045,38 @@ export function aiTurn(g: Game, random = Math.random): Game {
     hard: 0.76,
     expert: 0.9,
   };
-  const winChance = tocWinProbability(game, game.current, random);
-  if (winChance >= callThreshold[difficulty]) return callToc(game);
+  if (
+    tocWinProbability(game, game.current, random) >= callThreshold[difficulty]
+  )
+    return callToc(game);
   const counts = new Map<number, number>();
-  for (const c of p.known)
-    if (c) {
-      const v = matchValue(c);
-      counts.set(v, (counts.get(v) || 0) + 1);
-    }
-  const pair = [...counts].find(([, n]) => n >= 2);
+  for (const card of p.known)
+    if (card)
+      counts.set(matchValue(card), (counts.get(matchValue(card)) || 0) + 1);
+  const pair = [...counts].find(([, count]) => count >= 2);
   if (pair) {
     const slots = p.known
-      .flatMap((c, i) => (c && matchValue(c) === pair[0] ? [i] : []))
+      .flatMap((card, slot) =>
+        card && matchValue(card) === pair[0] ? [slot] : [],
+      )
       .slice(0, pair[1]);
     game = playPair(game, slots);
-    if (game.phase !== "play") return game;
-    if (game.events.at(-1)?.type === "pair") return game;
+    if (game.phase !== "play" || game.events.at(-1)?.type === "pair")
+      return game;
   }
-  p = game.players[game.current];
-  const known = p.known
-    .map((c, i) => (c && p.cards[i] ? i : -1))
-    .filter((i) => i >= 0);
   const deck = [...game.deck];
-  const c = deck.pop();
-  if (!c) return endTurn(game);
-  game = { ...game, deck, drawn: c, lastFastMatchValue: null };
-  const activeSlots = p.cards.flatMap((card, i) => (card ? [i] : []));
-  const knownWorst = [...known].sort(
-    (a, b) => cardValue(p.known[b]!) - cardValue(p.known[a]!),
-  )[0];
-  const meanUnseen =
-    makeDeck(() => 0)
-      .filter(
-        (card) =>
-          !game.discard.some((seen) => seen.id === card.id) &&
-          !p.known.some((seen) => seen?.id === card.id),
-      )
-      .reduce(
-        (sum, card, _, cards) => sum + cardValue(card) / cards.length,
-        0,
-      ) || 5.6;
-  const expectedSlot =
-    knownWorst === undefined ? meanUnseen : cardValue(p.known[knownWorst]!);
-  const acceptsPower = c.power !== null;
-  const acceptsCard =
-    acceptsPower ||
-    (difficulty === "easy"
-      ? random() < 0.52
-      : cardValue(c) < expectedSlot ||
-        (difficulty === "hard" && cardValue(c) <= expectedSlot) ||
-        (difficulty === "expert" && cardValue(c) <= expectedSlot + 1));
-  if (acceptsCard) {
-    const unknownSlots = activeSlots.filter((slot) => !p.known[slot]);
-    const slot =
-      knownWorst !== undefined && cardValue(c) <= expectedSlot
-        ? knownWorst
-        : unknownSlots.length
-          ? unknownSlots[Math.floor(random() * unknownSlots.length)]
-          : knownWorst;
-    if (slot === undefined)
-      return endTurn({ ...game, phase: "play", drawn: null });
-    game = { ...game, phase: "discard" };
-    game = takeDrawn(game, slot);
-    if (game.phase === "power" && game.effect === "look")
-      game = finishLook(game, slot);
-    else if (game.phase === "power" && game.effect === "blind") {
-      const enemy = (game.current + 1) % game.players.length;
-      const targetSlots = game.players[enemy].cards.flatMap((card, i) =>
-        card ? [i] : [],
-      );
-      game = swap(
-        game,
-        slot,
-        enemy,
-        targetSlots[Math.floor(random() * targetSlots.length)],
-      );
-    } else if (game.phase === "power" && game.effect === "sight") {
-      game = selectSightCard(game, slot);
-      const enemy = (game.current + 1) % game.players.length;
-      const targetSlots = game.players[enemy].cards.flatMap((card, i) =>
-        card ? [i] : [],
-      );
-      game = swap(
-        game,
-        slot,
-        enemy,
-        targetSlots[Math.floor(random() * targetSlots.length)],
-      );
-    }
-  } else {
-    game = { ...game, phase: "discard" };
-    game = discardDrawn(game);
-    return game;
-  }
-  return endTurn(game);
+  const drawn = deck.pop();
+  if (!drawn) return endTurn(game);
+  return recordEvent(
+    {
+      ...game,
+      deck,
+      drawn,
+      phase: "discard",
+      lastFastMatchValue: null,
+      tocAllowed: false,
+      message: `${p.name} pioche et réfléchit…`,
+    },
+    { type: "draw", actor: game.current, cardIds: [drawn.id] },
+  );
 }

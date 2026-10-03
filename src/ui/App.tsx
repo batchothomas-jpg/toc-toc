@@ -33,9 +33,9 @@ import {
   Difficulty,
   matchValue,
   draw,
-  endTurn,
   face,
   finishLook,
+  finishInitialPeek,
   Game,
   GameView,
   nextRound,
@@ -52,15 +52,17 @@ import {
   viewForPlayer,
 } from "../engine";
 import Tutorial from "./Tutorial";
+import memoryFx from "../assets/fx-memory.webp";
+import drawFx from "../assets/fx-draw.webp";
+import quickPlayFx from "../assets/fx-quick-play.webp";
 
 type Screen = "home" | "mode" | "rules" | "tutorial" | "scores" | "game";
 type ConfirmAction = "new-game" | "leave-game";
 const names = ["Vous", "Léonie", "Marcel", "Iris"];
 const fmt = (n: number) => String(n).padStart(2, "0");
 const rankName = (rank: number) =>
-  ({ 1: "As", 11: "Valet", 12: "Dame", 13: "Roi" })[
-    rank as 1 | 11 | 12 | 13
-  ] ?? String(rank);
+  ({ 1: "As", 11: "Valet", 12: "Dame", 13: "Roi" })[rank as 1 | 11 | 12 | 13] ??
+  String(rank);
 const ruleSections = [
   [
     "But du jeu",
@@ -110,7 +112,9 @@ function App() {
   });
   const [screen, setScreen] = useState<Screen>("home");
   const [modal, setModal] = useState<"pause" | "settings" | null>(null);
-  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(
+    null,
+  );
   const [returnScreen, setReturnScreen] = useState<Screen>("home");
   const [opponentCount, setOpponentCount] = useState<1 | 2 | 3>(3);
   const [difficulty, setDifficulty] = useState<Difficulty>("normal");
@@ -118,6 +122,8 @@ function App() {
   const [privateRevealSlot, setPrivateRevealSlot] = useState<number | null>(
     null,
   );
+  const [setupSeconds, setSetupSeconds] = useState(30);
+  const [pendingKeepSlot, setPendingKeepSlot] = useState<number | null>(null);
   const [notice, setNotice] = useState("");
   const [rapidPrompt, setRapidPrompt] = useState<{
     eventId: number;
@@ -144,6 +150,8 @@ function App() {
     setScreen("game");
     setModal(null);
     setSelection([]);
+    setSetupSeconds(30);
+    setPendingKeepSlot(null);
     setConfirmAction(null);
   };
   const requestNewGame = () => {
@@ -187,7 +195,8 @@ function App() {
   useEffect(() => {
     if (!game || !sound) return;
     const message = game.message.toLowerCase();
-    if (
+    if (game.events.at(-1)?.type === "draw") playCue("card");
+    else if (
       message.includes("toc toc réussi") ||
       message.includes("manche terminée")
     )
@@ -205,9 +214,13 @@ function App() {
       message.includes("roi")
     )
       playCue("power");
-    else if (message.includes("pioche") || message.includes("échange"))
+    else if (
+      message.includes("pioche") ||
+      message.includes("échange") ||
+      message.includes("défaussée")
+    )
       playCue("card");
-  }, [game?.message, sound]);
+  }, [game?.message, game?.events.length, sound]);
   useEffect(() => {
     if (rapidPrompt && sound) playCue("quick");
   }, [rapidPrompt?.eventId, sound]);
@@ -240,12 +253,18 @@ function App() {
       !game ||
       !current ||
       current.human ||
-      game.phase !== "play"
+      !["play", "discard", "power"].includes(game.phase)
     )
       return;
     const id = window.setTimeout(
       () => setGame((g) => (g ? aiTurn(g) : g)),
-      game.lastFastMatchValue === null ? 650 : 10200,
+      game.phase === "discard"
+        ? 1350
+        : game.phase === "power"
+          ? 1050
+          : game.lastFastMatchValue === null
+            ? 650
+            : 10200,
     );
     return () => clearTimeout(id);
   }, [
@@ -257,6 +276,30 @@ function App() {
     game?.events.length,
     game?.lastFastMatchValue,
   ]);
+  useEffect(() => {
+    if (screen !== "game" || modal || confirmAction || game?.phase !== "peek")
+      return;
+    setSetupSeconds(30);
+    let remaining = 30;
+    const timer = window.setInterval(() => {
+      remaining -= 1;
+      setSetupSeconds(remaining);
+      if (remaining <= 0) {
+        window.clearInterval(timer);
+        setGame((g) => (g ? finishInitialPeek(g) : g));
+      }
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [screen, modal, confirmAction, game?.round, game?.phase]);
+  useEffect(() => {
+    if (pendingKeepSlot === null || game?.phase !== "discard" || !game.drawn)
+      return;
+    const timer = window.setTimeout(() => {
+      setGame((g) => (g ? takeDrawn(g, pendingKeepSlot) : g));
+      setPendingKeepSlot(null);
+    }, 2600);
+    return () => window.clearTimeout(timer);
+  }, [pendingKeepSlot, game?.phase, game?.drawn?.id]);
   useEffect(() => {
     if (
       screen !== "game" ||
@@ -274,7 +317,13 @@ function App() {
     return () => {
       clearTimeout(reaction);
     };
-  }, [screen, modal, confirmAction, game?.events.length, game?.lastFastMatchValue]);
+  }, [
+    screen,
+    modal,
+    confirmAction,
+    game?.events.length,
+    game?.lastFastMatchValue,
+  ]);
   const rapidEvent = view?.events.at(-1);
   const mayOfferRapidPlay =
     screen === "game" &&
@@ -308,7 +357,9 @@ function App() {
         setRapidPrompt((currentPrompt) =>
           currentPrompt?.eventId === prompt.eventId ? null : currentPrompt,
         );
-        setGame((g) => (g ? closeFastPlayWindow(g, prompt.rank, prompt.eventId) : g));
+        setGame((g) =>
+          g ? closeFastPlayWindow(g, prompt.rank, prompt.eventId) : g,
+        );
       }
     }, 1000);
     return () => clearInterval(tick);
@@ -318,12 +369,12 @@ function App() {
     window.setTimeout(() => setNotice(""), 2800);
   };
   const remember = (i: number) => {
-    if (!game) return;
+    if (!game || game.peekLeft <= 0 || game.players[0].known[i]) return;
     if (game.players[0].known[i]) return;
     setPrivateRevealSlot(i);
     window.setTimeout(
       () => setPrivateRevealSlot((slot) => (slot === i ? null : slot)),
-      1100,
+      2400,
     );
     mutate((g) => ({
       ...rememberCard(g, 0, i),
@@ -334,16 +385,7 @@ function App() {
           : "Choisissez une autre carte à regarder.",
     }));
     if (game.peekLeft <= 1) {
-      window.setTimeout(
-        () =>
-          mutate((g) => ({
-            ...g,
-            phase: "play",
-            tocAllowed: true,
-            message: "Votre tour commence. Piochez ou annoncez TOC TOC.",
-          })),
-        450,
-      );
+      window.setTimeout(() => mutate((g) => finishInitialPeek(g)), 2600);
     }
   };
   const select = (i: number) =>
@@ -428,8 +470,10 @@ function App() {
       if (humanCards[index]) select(index);
       return;
     }
-    if (player.human && game.phase === "discard")
-      mutate((g) => takeDrawn(g, index));
+    if (player.human && game.phase === "discard" && pendingKeepSlot === null) {
+      setPendingKeepSlot(index);
+      playCue("card");
+    }
   };
   const reload = () => {
     setGame((g) => (g ? nextRound(g) : g));
@@ -503,7 +547,8 @@ function App() {
                     ? game.phase === "gameover"
                       ? "VOIR LE RÉSULTAT"
                       : "REPRENDRE"
-                    : "JOUER"} <Play size={16} fill="currentColor" />
+                    : "JOUER"}{" "}
+                  <Play size={16} fill="currentColor" />
                 </button>
                 {game && (
                   <button
@@ -569,7 +614,11 @@ function App() {
               </div>
             </div>
             <footer className="home-footer">
-              <span>{game ? "VOTRE PARTIE EST SAUVEGARDÉE" : "UNE PARTIE EN SOLO · 4 JOUEURS"}</span>
+              <span>
+                {game
+                  ? "VOTRE PARTIE EST SAUVEGARDÉE"
+                  : "UNE PARTIE EN SOLO · 4 JOUEURS"}
+              </span>
               <span>TOUT EST DANS LE REGARD.</span>
               <span>© TOC TOC STUDIO</span>
             </footer>
@@ -970,14 +1019,72 @@ function App() {
                 <div className="pile-label">
                   DÉFAUSSE <span>{view!.discard.length} CARTES</span>
                 </div>
-                <motion.div
-                  key={view?.events.at(-1)?.id}
-                  className="table-card-wrap"
-                  initial={{ y: -18, rotate: 8, opacity: 0 }}
-                  animate={{ y: 0, rotate: -4, opacity: 1 }}
-                >
-                  <CardView card={view!.discard.at(-1)!} small />
-                </motion.div>
+                <AnimatePresence mode="wait">
+                  {view!.discard.length ? (
+                    <motion.div
+                      key={view?.discard.at(-1)?.id}
+                      className="table-card-wrap"
+                      initial={{ y: -32, rotate: 13, opacity: 0, scale: 0.9 }}
+                      animate={{ y: 0, rotate: -4, opacity: 1, scale: 1 }}
+                      exit={{ y: 10, opacity: 0, scale: 0.94 }}
+                      transition={{
+                        type: "spring",
+                        stiffness: 240,
+                        damping: 22,
+                      }}
+                    >
+                      <CardView card={view!.discard.at(-1)!} small />
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      className="empty-discard"
+                      key="empty-discard"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                    >
+                      <span>✦</span>
+                      <small>PREMIÈRE POSE</small>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+                {game.phase === "discard" && game.current > 0 && (
+                  <motion.div
+                    className="ai-draw-effect"
+                    initial={{ opacity: 0, scale: 0.55, y: 24 }}
+                    animate={{
+                      opacity: [0, 1, 0.35],
+                      scale: [0.55, 1.1, 1],
+                      y: [24, 0, -12],
+                    }}
+                    transition={{ duration: 1.2 }}
+                  >
+                    <img src={drawFx} alt="" />
+                    <span>{current?.name} pioche…</span>
+                  </motion.div>
+                )}
+                {(view!.events.at(-1)?.type === "quick-play" ||
+                  view!.events.at(-1)?.type === "pair" ||
+                  view!.events.at(-1)?.type === "swap") && (
+                  <motion.img
+                    className={`quick-play-impact ${view!.events.at(-1)?.type === "pair" ? "pair-impact" : ""}`}
+                    src={
+                      view!.events.at(-1)?.type === "pair"
+                        ? drawFx
+                        : view!.events.at(-1)?.type === "swap"
+                          ? memoryFx
+                          : quickPlayFx
+                    }
+                    alt=""
+                    initial={{ opacity: 0, scale: 0.25, rotate: -18 }}
+                    animate={{
+                      opacity: [0, 0.9, 0],
+                      scale: [0.25, 1.1, 1.35],
+                      rotate: 0,
+                    }}
+                    transition={{ duration: 0.85 }}
+                    key={view!.events.at(-1)?.id}
+                  />
+                )}
                 <button
                   className={`deck ${game.phase === "play" && current?.human ? "deck-ready" : ""}`}
                   onClick={() =>
@@ -993,7 +1100,7 @@ function App() {
                 <div className="turn-pill">
                   <span className="status-dot" />
                   {view?.phase === "peek"
-                    ? "MÉMORISEZ VOS CARTES"
+                    ? `MÉMORISEZ · ${setupSeconds}S`
                     : view?.current === 0
                       ? "À VOUS DE JOUER"
                       : `TOUR DE ${current?.name.toUpperCase()}`}
@@ -1008,7 +1115,11 @@ function App() {
                     onClick={onCardClick}
                     phase={view!.phase}
                     human
-                    selectedSlots={selection}
+                    selectedSlots={
+                      pendingKeepSlot === null
+                        ? selection
+                        : [...selection, pendingKeepSlot]
+                    }
                     privateRevealSlot={privateRevealSlot}
                   />
                   <div className="you-meta">
@@ -1035,8 +1146,8 @@ function App() {
                 <div className="action-tools">
                   {game.phase === "peek" && (
                     <span className="action-hint">
-                      <Eye size={15} /> Regardez {game.peekLeft} carte
-                      {game.peekLeft > 1 ? "s" : ""}
+                      <Eye size={15} /> Touchez {game.peekLeft} carte
+                      {game.peekLeft > 1 ? "s" : ""} à mémoriser
                     </span>
                   )}
                   {game.phase === "play" && game.current === 0 && (
@@ -1054,22 +1165,25 @@ function App() {
                           ? `(${selection.length})`
                           : "les cartes"}
                       </button>
-                      <button
-                        className="button button-gold"
-                        onClick={() => mutate(endTurn)}
-                      >
-                        Terminer <ArrowRight size={15} />
-                      </button>
+                      <span className="action-hint turn-auto-hint">
+                        Piochez pour jouer · le tour se termine automatiquement
+                      </span>
                     </>
                   )}
                   {game.phase === "discard" && game.current === 0 && (
                     <>
                       <span className="action-hint">
-                        Échangez une carte ou défaussez
+                        {pendingKeepSlot === null
+                          ? "Touchez une de vos cartes pour la remplacer"
+                          : "Elle rejoint votre main dans un instant…"}
                       </span>
                       <button
                         className="button button-gold"
-                        onClick={() => mutate(discardDrawn)}
+                        disabled={pendingKeepSlot !== null}
+                        onClick={() => {
+                          setPendingKeepSlot(null);
+                          mutate(discardDrawn);
+                        }}
                       >
                         Défausser <ArrowRight size={15} />
                       </button>
@@ -1150,7 +1264,9 @@ function App() {
                     <span className="rapid-eyebrow">
                       POSE ÉCLAIR · {rapidSeconds} SECONDES
                     </span>
-                    <strong>Vous avez un rang {rankName(rapidPrompt.rank)} ?</strong>
+                    <strong>
+                      Vous avez un rang {rankName(rapidPrompt.rank)} ?
+                    </strong>
                     <small>
                       Touchez une carte cachée si vous tentez votre chance. Une
                       erreur ajoute une pénalité.
@@ -1209,17 +1325,62 @@ function App() {
                 </motion.div>
               )}
             </AnimatePresence>
-            {game.phase === "discard" && game.current === 0 && view!.drawn && (
+            {game.phase === "peek" && (
               <motion.div
-                className="drawn-card"
-                initial={{ opacity: 0, y: 35, rotate: 5 }}
-                animate={{ opacity: 1, y: 0, rotate: 0 }}
+                className="memory-overlay"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
               >
-                <span>PIOCHÉE</span>
-                <CardView card={view!.drawn!} />
-                <p>Choisissez une carte à remplacer</p>
+                <img src={memoryFx} alt="" />
+                <span>PHASE MÉMOIRE</span>
+                <b>
+                  {setupSeconds}
+                  <small>s</small>
+                </b>
+                <p>Mémorisez deux cartes avant que la table ne s’anime.</p>
               </motion.div>
             )}
+            <AnimatePresence>
+              {game.phase === "discard" &&
+                game.current === 0 &&
+                view!.drawn && (
+                  <motion.div
+                    key={view!.drawn.id}
+                    className={`drawn-card ${pendingKeepSlot !== null ? "keep-flight" : ""}`}
+                    initial={{ opacity: 0, y: 35, rotate: 5 }}
+                    exit={{
+                      opacity: 0,
+                      y: -48,
+                      scale: 0.72,
+                      rotate: 14,
+                      transition: { duration: 0.38 },
+                    }}
+                    animate={
+                      pendingKeepSlot !== null
+                        ? { opacity: 1, y: -18, x: 74, scale: 0.86, rotate: -7 }
+                        : { opacity: 1, y: 0, x: 0, scale: 1, rotate: 0 }
+                    }
+                    transition={{
+                      duration: pendingKeepSlot !== null ? 2.25 : 0.34,
+                      ease: "easeInOut",
+                    }}
+                  >
+                    <img className="draw-trail" src={drawFx} alt="" />
+                    <span>PIOCHÉE</span>
+                    <CardView card={view!.drawn!} />
+                    <p>
+                      {pendingKeepSlot !== null
+                        ? "La carte reste visible puis rejoint votre main"
+                        : "Gardez-la ou défaussez-la"}
+                    </p>
+                    {pendingKeepSlot !== null && (
+                      <small className="keep-countdown">
+                        MAIN MISE À JOUR…
+                      </small>
+                    )}
+                  </motion.div>
+                )}
+            </AnimatePresence>
             {game.phase === "round" && (
               <div className="overlay">
                 <motion.div
@@ -1293,7 +1454,10 @@ function App() {
                         </div>
                       ))}
                   </div>
-                  <button className="button button-gold" onClick={requestNewGame}>
+                  <button
+                    className="button button-gold"
+                    onClick={requestNewGame}
+                  >
                     Nouvelle partie <RotateCcw size={16} />
                   </button>
                   <button
@@ -1466,7 +1630,9 @@ function App() {
                 exit={{ opacity: 0, y: 12, scale: 0.97 }}
               >
                 <span className="eyebrow">
-                  {confirmAction === "new-game" ? "NOUVELLE PARTIE" : "QUITTER LA TABLE"}
+                  {confirmAction === "new-game"
+                    ? "NOUVELLE PARTIE"
+                    : "QUITTER LA TABLE"}
                 </span>
                 <h2 id="confirm-title">
                   {confirmAction === "new-game"
@@ -1490,7 +1656,9 @@ function App() {
                     className="button button-gold"
                     onClick={confirmPendingAction}
                   >
-                    {confirmAction === "new-game" ? "Nouvelle partie" : "Abandonner"}
+                    {confirmAction === "new-game"
+                      ? "Nouvelle partie"
+                      : "Abandonner"}
                   </button>
                 </div>
               </motion.section>
@@ -1586,19 +1754,23 @@ function PlayerSeat({
             onClick={() => onClick(player, i)}
             whileTap={{ scale: 0.96 }}
             title={human ? "Carte face cachée" : player.name}
-            aria-label={human ? `Votre carte ${i + 1}, face cachée` : `${player.name}, carte ${i + 1}, face cachée`}
+            aria-label={
+              human
+                ? `Votre carte ${i + 1}, face cachée`
+                : `${player.name}, carte ${i + 1}, face cachée`
+            }
           >
             {player.occupied[i] ? (
               card ? (
-              (human && privateRevealSlot === i) ||
-              phase === "round" ||
-              phase === "gameover" ? (
-                <CardView card={card} />
-              ) : (
-                <div className={`card-back ${human ? "your-back" : ""}`}>
-                  <span>TT</span>
-                </div>
-              )
+                (human && privateRevealSlot === i) ||
+                phase === "round" ||
+                phase === "gameover" ? (
+                  <CardView card={card} />
+                ) : (
+                  <div className={`card-back ${human ? "your-back" : ""}`}>
+                    <span>TT</span>
+                  </div>
+                )
               ) : (
                 <div className={`card-back ${human ? "your-back" : ""}`}>
                   <span>TT</span>

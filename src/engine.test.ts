@@ -11,6 +11,7 @@ import {
   draw,
   endTurn,
   finishLook,
+  finishInitialPeek,
   makeDeck,
   playPair,
   quickPlay,
@@ -47,12 +48,22 @@ describe("TOC TOC rules engine", () => {
     expect(g.players).toHaveLength(4);
     expect(g.players.every((p) => p.cards.length === 4)).toBe(true);
     expect(g.phase).toBe("peek");
+    expect(g.discard).toHaveLength(0);
     expect(g.peekLeft).toBe(2);
     const view = viewForPlayer(g, 0);
     expect(view.players[0].occupied).toEqual([true, true, true, true]);
     expect(view.players[0].cards).toEqual([null, null, null, null]);
     expect(view.players[1].occupied).toEqual([true, true, true, true]);
     expect(view.players[1].cards).toEqual([null, null, null, null]);
+  });
+  it("fills unmemorized slots after the setup timer and picks a random opener", () => {
+    const g = startGame(["Vous", "Léonie", "Marcel"], () => 0.42);
+    const next = finishInitialPeek(g, () => 0.5);
+    expect(next.phase).toBe("play");
+    expect(next.players[0].known.filter(Boolean)).toHaveLength(2);
+    expect(next.current).toBe(1);
+    expect(next.tocAllowed).toBe(true);
+    expect(finishInitialPeek(next)).toBe(next);
   });
   it("allows groups of matching values to be laid down", () => {
     const g = startGame();
@@ -97,7 +108,11 @@ describe("TOC TOC rules engine", () => {
     expect(next.lastFastMatchValue).toBeNull();
     expect(next.events.at(-1)?.type).toBe("penalty");
     expect(viewForPlayer(next, 0).players[0].occupied).toEqual([
-      true, true, true, true, true,
+      true,
+      true,
+      true,
+      true,
+      true,
     ]);
     expect(viewForPlayer(next, 0).players[0].cards[4]).toBeNull();
   });
@@ -132,6 +147,16 @@ describe("TOC TOC rules engine", () => {
     expect(next.current).toBe(1);
     expect(next.phase).toBe("play");
     expect(next.discard.at(-1)).toEqual(c(4, "♦"));
+  });
+  it("ends the turn automatically after keeping a non-power card", () => {
+    const g = startGame();
+    g.phase = "discard";
+    g.drawn = c(3, "♦");
+    g.players[0].cards[0] = c(8);
+    const next = takeDrawn(g, 0);
+    expect(next.current).toBe(1);
+    expect(next.phase).toBe("play");
+    expect(next.discard.at(-1)).toEqual(c(8));
   });
   it("only allows TOC TOC at the start of a turn, before drawing", () => {
     const g = startGame();
@@ -219,6 +244,8 @@ describe("TOC TOC rules engine", () => {
     expect(result.players[0].known[0]).toEqual(c(3));
     expect(result.players[1].known[0]).toBeNull();
     expect(result.message).toContain("Roi");
+    expect(result.current).toBe(1);
+    expect(result.phase).toBe("play");
   });
   it("lets a jack update the card the player has memorized", () => {
     const g = startGame();
@@ -230,6 +257,8 @@ describe("TOC TOC rules engine", () => {
     expect(power.effect).toBe("look");
     const result = finishLook(power, 1);
     expect(result.players[0].known[1]).toEqual(c(6));
+    expect(result.current).toBe(1);
+    expect(result.phase).toBe("play");
   });
   it("does not let AI play a pair it has not memorized", () => {
     const g = startGame();
@@ -239,8 +268,8 @@ describe("TOC TOC rules engine", () => {
     g.players[1].known = [null, null, null, null];
     const result = aiTurn(g, () => 0);
     expect(result.players[1].cards.filter(Boolean)).toHaveLength(4);
-    expect(result.phase).toBe("play");
-    expect(result.current).toBe(2);
+    expect(result.phase).toBe("discard");
+    expect(result.current).toBe(1);
   });
   it("ends the hand when last cards are laid and awards each player their own total", () => {
     const g = startGame();
