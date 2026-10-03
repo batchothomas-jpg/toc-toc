@@ -9,6 +9,7 @@ import {
   Crown,
   Eye,
   FastForward,
+  Home,
   Pause,
   Play,
   RotateCcw,
@@ -53,6 +54,7 @@ import {
 import Tutorial from "./Tutorial";
 
 type Screen = "home" | "mode" | "rules" | "tutorial" | "scores" | "game";
+type ConfirmAction = "new-game" | "leave-game";
 const names = ["Vous", "Léonie", "Marcel", "Iris"];
 const fmt = (n: number) => String(n).padStart(2, "0");
 const rankName = (rank: number) =>
@@ -106,14 +108,10 @@ function App() {
       return null;
     }
   });
-  const [screen, setScreen] = useState<Screen>(() => {
-    try {
-      return game ? "game" : "home";
-    } catch {
-      return "home";
-    }
-  });
+  const [screen, setScreen] = useState<Screen>("home");
   const [modal, setModal] = useState<"pause" | "settings" | null>(null);
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
+  const [returnScreen, setReturnScreen] = useState<Screen>("home");
   const [opponentCount, setOpponentCount] = useState<1 | 2 | 3>(3);
   const [difficulty, setDifficulty] = useState<Difficulty>("normal");
   const [selection, setSelection] = useState<number[]>([]);
@@ -146,6 +144,27 @@ function App() {
     setScreen("game");
     setModal(null);
     setSelection([]);
+    setConfirmAction(null);
+  };
+  const requestNewGame = () => {
+    if (game) setConfirmAction("new-game");
+    else start();
+  };
+  const goHome = () => {
+    setModal(null);
+    setRapidPrompt(null);
+    setScreen("home");
+  };
+  const confirmPendingAction = () => {
+    if (confirmAction === "new-game") start();
+    if (confirmAction === "leave-game") {
+      setGame(null);
+      setSelection([]);
+      setRapidPrompt(null);
+      setModal(null);
+      setScreen("home");
+      setConfirmAction(null);
+    }
   };
   const mutate = (fn: (g: Game) => Game) => setGame((g) => (g ? fn(g) : g));
   useEffect(() => {
@@ -197,12 +216,27 @@ function App() {
       playCue("tick");
   }, [rapidSeconds, rapidPrompt?.eventId, sound]);
   useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (confirmAction) setConfirmAction(null);
+      else if (modal) setModal(null);
+      else if (screen === "game") setModal("pause");
+      else if (screen === "rules" || screen === "tutorial")
+        setScreen(returnScreen);
+      else if (screen === "scores") setScreen(game ? "game" : "home");
+      else if (screen === "mode") setScreen("home");
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [confirmAction, modal, screen, returnScreen, game]);
+  useEffect(() => {
     setEffectsVolume(sound ? effectVolume / 100 : 0);
   }, [sound, effectVolume]);
   useEffect(() => {
     if (
       screen !== "game" ||
       modal ||
+      confirmAction ||
       !game ||
       !current ||
       current.human ||
@@ -217,13 +251,20 @@ function App() {
   }, [
     screen,
     modal,
+    confirmAction,
     game?.current,
     game?.phase,
     game?.events.length,
     game?.lastFastMatchValue,
   ]);
   useEffect(() => {
-    if (screen !== "game" || modal || !game || game.lastFastMatchValue === null)
+    if (
+      screen !== "game" ||
+      modal ||
+      confirmAction ||
+      !game ||
+      game.lastFastMatchValue === null
+    )
       return;
     const match = game.lastFastMatchValue;
     const reaction = window.setTimeout(
@@ -233,11 +274,12 @@ function App() {
     return () => {
       clearTimeout(reaction);
     };
-  }, [screen, modal, game?.events.length, game?.lastFastMatchValue]);
+  }, [screen, modal, confirmAction, game?.events.length, game?.lastFastMatchValue]);
   const rapidEvent = view?.events.at(-1);
   const mayOfferRapidPlay =
     screen === "game" &&
     !modal &&
+    !confirmAction &&
     !!game &&
     game.phase !== "round" &&
     game.phase !== "gameover" &&
@@ -455,19 +497,37 @@ function App() {
               <div className="hero-actions">
                 <button
                   className="button button-gold"
-                  onClick={() => setScreen("mode")}
+                  onClick={() => (game ? setScreen("game") : setScreen("mode"))}
                 >
-                  JOUER <Play size={16} fill="currentColor" />
+                  {game
+                    ? game.phase === "gameover"
+                      ? "VOIR LE RÉSULTAT"
+                      : "REPRENDRE"
+                    : "JOUER"} <Play size={16} fill="currentColor" />
                 </button>
+                {game && (
+                  <button
+                    className="button button-quiet"
+                    onClick={() => setScreen("mode")}
+                  >
+                    <RotateCcw size={15} /> Nouvelle partie
+                  </button>
+                )}
                 <button
                   className="button button-quiet"
-                  onClick={() => setScreen("tutorial")}
+                  onClick={() => {
+                    setReturnScreen("home");
+                    setScreen("tutorial");
+                  }}
                 >
                   <Sparkles size={16} /> Tutoriel interactif
                 </button>
                 <button
                   className="button button-quiet"
-                  onClick={() => setScreen("rules")}
+                  onClick={() => {
+                    setReturnScreen("home");
+                    setScreen("rules");
+                  }}
                 >
                   <BookOpen size={16} /> Les règles
                 </button>
@@ -509,7 +569,7 @@ function App() {
               </div>
             </div>
             <footer className="home-footer">
-              <span>UNE PARTIE EN SOLO · 4 JOUEURS</span>
+              <span>{game ? "VOTRE PARTIE EST SAUVEGARDÉE" : "UNE PARTIE EN SOLO · 4 JOUEURS"}</span>
               <span>TOUT EST DANS LE REGARD.</span>
               <span>© TOC TOC STUDIO</span>
             </footer>
@@ -550,7 +610,7 @@ function App() {
                   <span>{opponentCount + 1} JOUEURS</span>
                 </div>
               </div>
-              <button className="button button-gold" onClick={start}>
+              <button className="button button-gold" onClick={requestNewGame}>
                 Jouer maintenant <ArrowRight size={16} />
               </button>
             </div>
@@ -630,7 +690,10 @@ function App() {
               </button>
               <button
                 className="mode-shortcut"
-                onClick={() => setScreen("tutorial")}
+                onClick={() => {
+                  setReturnScreen("mode");
+                  setScreen("tutorial");
+                }}
               >
                 <span className="mode-shortcut-icon">✦</span>
                 <span>
@@ -650,7 +713,7 @@ function App() {
           >
             <button
               className="back-link"
-              onClick={() => setScreen(game ? "game" : "home")}
+              onClick={() => setScreen(returnScreen)}
             >
               <ArrowLeft size={16} /> Retour
             </button>
@@ -751,14 +814,17 @@ function App() {
             </div>
             <button
               className="button button-gold"
-              onClick={() => (game ? setScreen("game") : setScreen("mode"))}
+              onClick={() => setScreen(returnScreen)}
             >
               C’est compris <ArrowRight size={16} />
             </button>
           </motion.section>
         )}
         {screen === "tutorial" && (
-          <Tutorial onBack={() => setScreen("home")} onStart={start} />
+          <Tutorial
+            onBack={() => setScreen(returnScreen)}
+            onStart={requestNewGame}
+          />
         )}
         {screen === "scores" && game && view && (
           <motion.section
@@ -819,7 +885,7 @@ function App() {
               ))}
             </div>
             {game.phase === "gameover" && (
-              <button className="button button-gold" onClick={start}>
+              <button className="button button-gold" onClick={requestNewGame}>
                 Nouvelle partie <RotateCcw size={16} />
               </button>
             )}
@@ -832,7 +898,11 @@ function App() {
             animate={{ opacity: 1 }}
           >
             <header className="game-header">
-              <button className="mini-brand" onClick={() => setModal("pause")}>
+              <button
+                className="mini-brand"
+                onClick={() => setModal("pause")}
+                aria-label="Ouvrir le menu pause"
+              >
                 <span className="brand-mark">T</span>
                 <span>
                   TOC TOC <small>ÉDITION NOCTURNE</small>
@@ -844,18 +914,41 @@ function App() {
               </div>
               <div className="header-controls">
                 <button
+                  title="Accueil — votre partie est sauvegardée"
+                  aria-label="Retour à l'accueil en sauvegardant la partie"
+                  onClick={goHome}
+                >
+                  <Home size={17} />
+                </button>
+                <button
                   title="Score général"
+                  aria-label="Voir le score général"
                   onClick={() => setScreen("scores")}
                 >
                   <Trophy size={17} />
                 </button>
-                <button title="Règles" onClick={() => setScreen("rules")}>
+                <button
+                  title="Règles"
+                  aria-label="Ouvrir les règles"
+                  onClick={() => {
+                    setReturnScreen("game");
+                    setScreen("rules");
+                  }}
+                >
                   <CircleHelp size={18} />
                 </button>
-                <button title="Paramètres" onClick={() => setModal("settings")}>
+                <button
+                  title="Paramètres"
+                  aria-label="Ouvrir les paramètres"
+                  onClick={() => setModal("settings")}
+                >
                   <Settings2 size={18} />
                 </button>
-                <button title="Pause" onClick={() => setModal("pause")}>
+                <button
+                  title="Pause"
+                  aria-label="Mettre la partie en pause"
+                  onClick={() => setModal("pause")}
+                >
                   <Pause size={17} />
                 </button>
               </div>
@@ -991,7 +1084,7 @@ function App() {
                   {(game.phase === "round" || game.phase === "gameover") && (
                     <button
                       className="button button-gold"
-                      onClick={game.phase === "round" ? reload : start}
+                      onClick={game.phase === "round" ? reload : requestNewGame}
                     >
                       {game.phase === "round" ? "Manche suivante" : "Rejouer"}{" "}
                       <ArrowRight size={15} />
@@ -1013,6 +1106,7 @@ function App() {
                 className={`sound-toggle ${sound ? "" : "muted"}`}
                 onClick={() => setSound(!sound)}
                 title="Son"
+                aria-label={sound ? "Couper le son" : "Activer le son"}
               >
                 <span className="sound-bars">
                   <i />
@@ -1199,7 +1293,7 @@ function App() {
                         </div>
                       ))}
                   </div>
-                  <button className="button button-gold" onClick={start}>
+                  <button className="button button-gold" onClick={requestNewGame}>
                     Nouvelle partie <RotateCcw size={16} />
                   </button>
                   <button
@@ -1221,6 +1315,8 @@ function App() {
                   <button
                     className="close-button"
                     onClick={() => setModal(null)}
+                    title="Fermer"
+                    aria-label="Fermer ce menu"
                   >
                     <X />
                   </button>
@@ -1301,26 +1397,106 @@ function App() {
                       </button>
                     </div>
                   )}
-                  <button
-                    className="button button-gold full"
-                    onClick={() => setModal(null)}
-                  >
-                    <Play size={16} /> Reprendre
-                  </button>
-                  <button
-                    className="button button-quiet full"
-                    onClick={() => {
-                      setModal(null);
-                      setScreen("home");
-                    }}
-                  >
-                    Quitter la partie
-                  </button>
+                  {modal === "pause" ? (
+                    <>
+                      <button
+                        className="button button-gold full"
+                        onClick={() => setModal(null)}
+                      >
+                        <Play size={16} /> Reprendre la partie
+                      </button>
+                      <button
+                        className="button button-outline full"
+                        onClick={requestNewGame}
+                      >
+                        <RotateCcw size={15} /> Nouvelle partie
+                      </button>
+                      <div className="pause-secondary-actions">
+                        <button
+                          className="button button-quiet"
+                          onClick={goHome}
+                        >
+                          <Home size={15} /> Accueil
+                        </button>
+                        <button
+                          className="button button-quiet abandon-action"
+                          onClick={() => {
+                            setModal(null);
+                            setConfirmAction("leave-game");
+                          }}
+                        >
+                          Abandonner
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <button
+                      className="button button-gold full"
+                      onClick={() => setModal(null)}
+                    >
+                      <Play size={16} /> Fermer les réglages
+                    </button>
+                  )}
                 </motion.div>
               </div>
             )}
           </motion.section>
         )}
+        <AnimatePresence>
+          {confirmAction && (
+            <motion.div
+              className="confirm-overlay"
+              role="presentation"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onMouseDown={(event) => {
+                if (event.target === event.currentTarget)
+                  setConfirmAction(null);
+              }}
+            >
+              <motion.section
+                className="confirm-panel"
+                role="alertdialog"
+                aria-modal="true"
+                aria-labelledby="confirm-title"
+                aria-describedby="confirm-description"
+                initial={{ opacity: 0, y: 18, scale: 0.96 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 12, scale: 0.97 }}
+              >
+                <span className="eyebrow">
+                  {confirmAction === "new-game" ? "NOUVELLE PARTIE" : "QUITTER LA TABLE"}
+                </span>
+                <h2 id="confirm-title">
+                  {confirmAction === "new-game"
+                    ? "Recommencer à zéro ?"
+                    : "Abandonner cette partie ?"}
+                </h2>
+                <p id="confirm-description">
+                  {confirmAction === "new-game"
+                    ? "La partie actuelle et son cumul de points seront remplacés par une nouvelle partie."
+                    : "Votre sauvegarde et l’historique des manches seront supprimés. Vous pourrez toujours lancer une nouvelle partie depuis l’accueil."}
+                </p>
+                <div className="confirm-actions">
+                  <button
+                    className="button button-outline"
+                    onClick={() => setConfirmAction(null)}
+                    autoFocus
+                  >
+                    Continuer la partie
+                  </button>
+                  <button
+                    className="button button-gold"
+                    onClick={confirmPendingAction}
+                  >
+                    {confirmAction === "new-game" ? "Nouvelle partie" : "Abandonner"}
+                  </button>
+                </div>
+              </motion.section>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </main>
     </MotionConfig>
   );

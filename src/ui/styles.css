@@ -2115,6 +2115,7 @@ button:focus-visible {
   border-radius: 999px;
   background: #120e0ac9;
   color: #ebd8b4;
+  margin-bottom: 0;
 }
 .hero-table {
   filter: drop-shadow(0 18px 32px #0009);
@@ -2903,4 +2904,77 @@ button:focus-visible {
     font-size: 12px !important;
     min-width: 0;
   }
+}
+
+.pause-panel {
+  max-height: calc(100dvh - 28px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.pause-secondary-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 6px;
+}
+.pause-secondary-actions .button-quiet {
+  min-height: 40px;
+  margin: 0;
+  color: #c4b69e;
+  font-size: 10px;
+}
+.pause-secondary-actions .abandon-action { color: #c98b7e; }
+.pause-secondary-actions .abandon-action:hover { color: #ffc0ad; }
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: max(18px, env(safe-area-inset-top)) 14px
+    max(18px, env(safe-area-inset-bottom));
+  background: #080706d9;
+  backdrop-filter: blur(10px);
+}
+.confirm-panel {
+  width: min(470px, calc(100vw - 28px));
+  padding: clamp(23px, 6vw, 36px);
+  border: 1px solid #d8b16d7a;
+  border-radius: 18px;
+  background:
+    radial-gradient(ellipse at 8% 0, #e6b4541c, transparent 56%),
+    linear-gradient(145deg, #242018, #14120f);
+  box-shadow: 0 28px 90px #000d, inset 0 1px #fff2;
+}
+.confirm-panel .eyebrow { color: #d5b571; }
+.confirm-panel h2 {
+  margin: 15px 0 9px;
+  color: #f4e4c4;
+  font: 500 clamp(25px, 6vw, 32px)/1.1 "Playfair Display", serif;
+}
+.confirm-panel p {
+  margin: 0;
+  color: #b8ad9c;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.confirm-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 24px;
+}
+.confirm-actions .button { width: 100%; min-height: 44px; height: auto; }
+@media (max-width: 460px) {
+  .confirm-actions { grid-template-columns: 1fr; }
+  .pause-panel { padding: 28px 22px; }
+}
+@media (max-width: 380px) {
+  .game-header { padding-inline: 10px; }
+  .mini-brand { font-size: 10px; letter-spacing: .08em; }
+  .mini-brand small { display: none; }
+  .round-label { display: none; }
+  .header-controls { gap: 3px; }
+  .header-controls button { width: 27px; height: 29px; }
 }
